@@ -115,7 +115,7 @@ if __name__ == "__main__":
 		break
 	
 	# initialize model with fp32 model
-	model = trtModel('gdepth_int8.trt')
+	model = trtModel('../gdepth_int8.trt')
 	
 	# benchmark model
 	times = []
@@ -134,7 +134,7 @@ if __name__ == "__main__":
 	
 	# reload with fp16 model
 	# reloading can be used when receiving a new global model via federated learning since it will have the same input and output shape and type
-	model.reload_model('gdepth_int8.trt')
+	model.reload_model('../gdepth_fp16.trt')
 	
 	# benchmark model
 	times = []
