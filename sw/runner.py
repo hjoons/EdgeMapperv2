@@ -30,6 +30,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     train(args)
-
-    '''python runner.py --mode=train --data_path=./data/sync --gt_path=./data/sync --filenames_file=nyudepthv2_train_files_with_gt_dense.txt --log_directory=./logs --checkpoint_path=./ckpt
---checkpoint_freq=25 --log_freq=10 --batch_size=1 --num_epochs=100 --learning_rate=0.001 --gt_path_eval=./data/sync --filenames_file_eval=nyudepthv2_test_files_with_gt.txt --num_threads=1'''
