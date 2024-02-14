@@ -4,6 +4,9 @@ import torch.nn.functional as F
 import numpy as np
 import time
 import os
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 
 from losses import ssim, depth_loss
 from dataloader import NewDataLoader

@@ -46,6 +46,8 @@ class DataLoadPreprocess(Dataset):
     def __getitem__(self, idx):
         sample_path = self.filenames[idx]
 
+        focal = 518.8579
+
         if self.mode == 'train':
             rgb_file = sample_path.split()[0]
             depth_file = sample_path.split()[1]

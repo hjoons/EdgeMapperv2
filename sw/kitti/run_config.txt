@@ -1,0 +1,14 @@
+--mode=train
+--data_path=./kitti
+--gt_path ./kitti
+--filenames_file=data_splits/eigen_train_files_with_gt.txt
+--log_directory=./logs_kitti
+--checkpoint_path=./ckpt_kitti
+--checkpoint_freq=25 
+--log_freq=10
+--batch_size=1
+--num_epochs=100
+--learning_rate=0.001
+--gt_path_eval=./kitti
+--filenames_file_eval=eigen_test_files_with_gt.txt
+--num_threads=1
