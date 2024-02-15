@@ -83,9 +83,9 @@ class FusionElement(nn.Module):
         super(FusionElement, self).__init__()
         # Using conv for BatchNorm2d, unsure if this is the correct one to use
         self.conv = conv(in_channels, out_channels, kernel_size=3)
-        self.up_sample = nn.Upsample(scale_factor=2, mode='nearest')
+        # self.up_sample = nn.Upsample(scale_factor=2, mode='nearest')
     
     def forward(self, down_input, skip_input):
-        x = self.up_sample(down_input)
-        x = torch.add(x, skip_input)
+        # x = self.up_sample(down_input)
+        x = torch.add(down_input, skip_input)    
         return self.conv(x)        
