@@ -1,6 +1,6 @@
 from layers import *
 
-class MonoDepth():
+class MonoDepth(nn.Module):
     def __init__(self):
         super(MonoDepth, self).__init__()
         
