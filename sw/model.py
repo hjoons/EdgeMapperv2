@@ -18,11 +18,19 @@ class MonoDepth(nn.Module):
         self.up_conv4 = pointwise(64, 1)
 
     def forward(self, x):
+        print('l1', x.size())
         x, skip_out1 = self.down_conv1(x)
+        print('l2', x.size())
         x, skip_out2 = self.down_conv2(x)
+        print('l3', x.size())
         x, skip_out3 = self.down_conv3(x)
-        x, skip_out4 = self.down_conv4(x) # Fourth skip connection unused
-        x = self.fusion1(self.up_conv1(x), skip_out1)
+        print('l4', x.size())
+        x, skip_out4 = self.down_conv4(x) # Fourth skip connection unused ??
+        print('l5', x.size())
+        x = self.fusion1(self.up_conv1(x), skip_out3)
+        print('l6', x.size())
         x = self.fusion2(self.up_conv2(x), skip_out2)
-        x = self.fusion3(self.up_conv3(x), skip_out3)
+        print('l7', x.size())
+        x = self.fusion3(self.up_conv3(x), skip_out1)
+        print('l8', x.size())
         return self.up_conv4(x)        

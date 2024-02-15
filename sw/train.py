@@ -22,18 +22,18 @@ def train(args):
     print(f"Now using device: {device}")
     writer = SummaryWriter(args.log_directory)
 
-    model = MonoDepth()
-    model.train()
 
     print('Loading data...')
     train_loader = NewDataLoader(args, args.mode)
     test_loader = NewDataLoader(args, args.mode)
 
-    model = MobileNetSkipConcat().to(torch.device(device))
+    model = MonoDepth().to(torch.device(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     l1_criterion = torch.nn.L1Loss()
+    
 
     print('Starting training...')
+    model.train()
 
     train_loss = []
     test_loss = []

@@ -1,6 +1,7 @@
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -10,7 +11,7 @@ class DownBlock(nn.Module):
     
     def forward(self, x):
         skip_out = self.double_conv(x)
-        down_out = self.down_sample(x)
+        down_out = self.down_sample(skip_out)
         return (down_out, skip_out)
 
 class DoubleConv(nn.Module):
@@ -82,7 +83,9 @@ class FusionElement(nn.Module):
         super(FusionElement, self).__init__()
         # Using conv for BatchNorm2d, unsure if this is the correct one to use
         self.conv = conv(in_channels, out_channels, kernel_size=3)
+        self.up_sample = nn.Upsample(scale_factor=2, mode='nearest')
     
     def forward(self, down_input, skip_input):
-        x = down_input + skip_input
+        x = self.up_sample(down_input)
+        x = torch.add(x, skip_input)
         return self.conv(x)        
