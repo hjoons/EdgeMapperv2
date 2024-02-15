@@ -1,7 +1,7 @@
 --mode=train
 --data_path=./kitti
---gt_path ./kitti
---filenames_file=data_splits/eigen_train_files_with_gt.txt
+--gt_path=./kitti
+--filenames_file=eigen_train_files_with_gt.txt
 --log_directory=./logs_kitti
 --checkpoint_path=./ckpt_kitti
 --checkpoint_freq=25 
