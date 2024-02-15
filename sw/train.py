@@ -8,6 +8,7 @@ import os
 from losses import ssim, depth_loss
 from dataloader import NewDataLoader
 from mobilenetv3 import MobileNetSkipConcat
+from model import MonoDepth
 from torch.utils.tensorboard import SummaryWriter
 
 def train(args):
@@ -21,7 +22,7 @@ def train(args):
     print(f"Now using device: {device}")
     writer = SummaryWriter(args.log_directory)
 
-    model = MobileNetSkipConcat()
+    model = MonoDepth()
     model.train()
 
     print('Loading data...')
