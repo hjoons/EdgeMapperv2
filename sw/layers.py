@@ -72,7 +72,7 @@ class FusionConcat(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(FusionConcat, self).__init__()
         # Using conv for BatchNorm2d, unsure if this is the correct one to use
-        self.conv = conv(in_channels, out_channels, kernel_size=3)
+        self.conv = conv(2*in_channels + out_channels, out_channels, kernel_size=3)
         
     def forward(self, down_input, skip_input):
         x = torch.cat([down_input, skip_input], dim=1)
@@ -83,9 +83,9 @@ class FusionElement(nn.Module):
         super(FusionElement, self).__init__()
         # Using conv for BatchNorm2d, unsure if this is the correct one to use
         self.conv = conv(in_channels, out_channels, kernel_size=3)
-        # self.up_sample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.point = pointwise(out_channels*2, out_channels)
     
     def forward(self, down_input, skip_input):
-        # x = self.up_sample(down_input)
-        x = torch.add(down_input, skip_input)    
+        skip_input = self.point(skip_input)
+        x = torch.add(down_input, skip_input)
         return self.conv(x)        
