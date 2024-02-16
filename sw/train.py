@@ -1,17 +1,22 @@
+import time
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
-import time
-import os
 
 from losses import ssim, depth_loss
 from dataloader import NewDataLoader
 from mobilenetv3 import MobileNetSkipConcat
 from model import MonoDepth
-from torch.utils.tensorboard import SummaryWriter
+from utils.setup_funcs import init_logger, init_seeds
 
 def train(args):
+    init_seeds(args.seed)
+    logging_prefix = args.logname
+    logger = init_logger(f"{logging_prefix}/seed{args.seed}")
     device = (
         "cuda"
         if torch.cuda.is_available()
@@ -19,11 +24,11 @@ def train(args):
         if torch.backends.mps.is_available()
         else "cpu"
     )
-    print(f"Now using device: {device}")
+    logger.info(f"Now using device: {device}")
     writer = SummaryWriter(args.log_directory)
 
 
-    print('Loading data...')
+    logger.info('Loading data...')
     train_loader = NewDataLoader(args, args.mode)
     test_loader = NewDataLoader(args, args.mode)
 
@@ -32,7 +37,7 @@ def train(args):
     l1_criterion = torch.nn.L1Loss()
     
 
-    print('Starting training...')
+    logger.info('Starting training...')
     model.train()
 
     train_loss = []
@@ -71,7 +76,7 @@ def train(args):
             running_loss += cpu_loss
 
             if ((batch_idx + 1) % 100 == 0):
-                print(f'Batch {batch_idx + 1} / {len(train_loader.data)} || Loss: ', running_loss / (batch_idx + 1))
+                logger.info(f'Batch {batch_idx + 1} / {len(train_loader.data)} || Loss: ', running_loss / (batch_idx + 1))
 
             net_loss.backward()
 
@@ -120,7 +125,7 @@ def train(args):
                 writer.add_scalar('Loss/train', (running_loss / len(train_loader)), global_step=(epoch + 1))
                 writer.add_scalar('Loss/test', (running_loss / len(test_loader)), global_step=(epoch + 1))
 
-            print(f'epoch: {epoch + 1} train loss: {running_loss / len(train_loader)} testing loss: {running_test_loss / len(test_loader)} time: {time_end - time_start}')
+            logger.info(f'epoch: {epoch + 1} train loss: {running_loss / len(train_loader)} testing loss: {running_test_loss / len(test_loader)} time: {time_end - time_start}')
     writer.close()
 
 if __name__ == '__main__':

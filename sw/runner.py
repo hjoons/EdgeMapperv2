@@ -27,6 +27,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--num_threads',               type=int,   help='number of threads to use for data loading', default=1)
 
+    parser.add_argument('--seed',                      type=int,   help='random seed', default=42)
+    parser.add_argument('--logname',                   type=str,   help='name of the log', default='train_logs')
+
     args = parser.parse_args()
 
     train(args)
