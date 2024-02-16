@@ -15,7 +15,7 @@ class MonoDepth(nn.Module):
         self.fusion2 = FusionElement(128, 128)
         self.up_conv3 = NNConv(128, 64, kernel_size=3, dw=True)
         self.fusion3 = FusionConcat(64, 64)
-        self.up_conv4 = pointwise(64, 1)
+        self.up_conv4 = NNConv(64, 1, kernel_size=3, dw=True)
 
     # Literature shows that we should use skip1-3 but we use skip 2-4 and pointwise
     def forward(self, x):
