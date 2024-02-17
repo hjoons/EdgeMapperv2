@@ -12,7 +12,7 @@ import random
 import time
 import numpy as np
 # import torch
-# import argparse
+import argparse
 # from unet.model import UNet
 
 import torch
@@ -378,7 +378,7 @@ def main2():
     # Close the OpenCV window
     cv2.destroyAllWindows()
     
-def main3():
+def main3(args):
     # create_frames(f"{path}")
     #x, y = create_data_set("ecj1204.h5")
     #loader = create_data_loader(x, y)
@@ -392,7 +392,7 @@ def main3():
     )
     print(f"Now using device: {device}")
     model = UNet().to(torch.device(device))
-    model.load_state_dict(torch.load('../epoch_250.pt')['model_state_dict'])
+    model.load_state_dict(torch.load(f'{args.model_path}')['model_state_dict'])
     model.eval()
     print(f"Model loaded!")
     print(f"Starting capture...")
@@ -462,4 +462,7 @@ if __name__ == "__main__":
 #    args = argsparser.parse_args()
 #    main(args.path)
 #    main2()
-    main3()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_path', type=str, help='path to the model', default='../epoch_250.pt')
+    args = parser.parse_args()
+    main3(args)
