@@ -1,19 +1,21 @@
+import os
+import time
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+
 import matplotlib.pyplot as plt
 from matplotlib import image
-import os
 import cv2
-# from frame_helpers import colorize, convert_to_bgra_if_required
 import pyk4a
 from pyk4a import PyK4A, Config, FPS, DepthMode, ColorResolution
 import h5py
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 import random
-import time
 import numpy as np
-# import torch
 import argparse
-# from unet.model import UNet
+from sw.mobilenetv3 import MobileNetSkipConcat
 
 import torch
 from torch import nn
@@ -391,7 +393,7 @@ def main3(args):
         else "cpu"
     )
     print(f"Now using device: {device}")
-    model = UNet().to(torch.device(device))
+    model = MobileNetSkipConcat().to(torch.device(device))
     model.load_state_dict(torch.load(f'{args.model_path}')['model_state_dict'])
     model.eval()
     print(f"Model loaded!")
@@ -463,6 +465,6 @@ if __name__ == "__main__":
 #    main(args.path)
 #    main2()
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, help='path to the model', default='../epoch_250.pt')
+    parser.add_argument('--model_path', type=str, help='path to the model', default='../mbnv3_epoch_100.pt')
     args = parser.parse_args()
     main3(args)
