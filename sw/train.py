@@ -76,7 +76,7 @@ def train(args):
             running_loss += cpu_loss
 
             if ((batch_idx + 1) % 100 == 0):
-                logger.info(f'Batch {batch_idx + 1} / {len(train_loader.data)} || Loss: ', running_loss / (batch_idx + 1))
+                logger.info(f'Batch {batch_idx + 1} / {len(train_loader.data)} || Loss: {running_loss / (batch_idx + 1)}')
 
             net_loss.backward()
 
