@@ -29,6 +29,9 @@ class NewDataLoader(object):
                                    num_workers=1)
         else:
             print('mode should be one of \'train\' or \'test\'. Got {}'.format(mode))
+    
+    def __len__(self):
+        return len(self.data)
 
 class DataLoadPreprocess(Dataset):
     def __init__(self, args, mode, transform=None):
