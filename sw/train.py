@@ -95,7 +95,12 @@ def train(args):
         model.eval()
         with torch.no_grad():
             running_test_loss = 0
-            for batch_idx, (image, depth) in enumerate(test_loader.data):
+            for batch_idx, batch in enumerate(test_loader.data):
+                image = batch['image']
+                depth = batch['depth']
+
+                image = image.to(torch.device(device))
+                depth = depth.to(torch.device(device))
                 
                 pred = model(image)
 
