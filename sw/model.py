@@ -4,10 +4,10 @@ class MonoDepth(nn.Module):
     def __init__(self):
         super(MonoDepth, self).__init__()
         
-        self.down_conv1 = DownBlock(3, 64)
-        self.down_conv2 = DownBlock(64, 128)
-        self.down_conv3 = DownBlock(128, 256)
-        self.down_conv4 = DownBlock(256, 512)
+        self.down_conv1 = DownBlock(3, 64, dw=True)
+        self.down_conv2 = DownBlock(64, 128, dw=True)
+        self.down_conv3 = DownBlock(128, 256, dw=True)
+        self.down_conv4 = DownBlock(256, 512, dw=True)
         
         self.up_conv1 = NNConv(512, 256, kernel_size=3, dw=True)
         self.fusion1 = FusionElement(256, 256)

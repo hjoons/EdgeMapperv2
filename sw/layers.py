@@ -4,9 +4,9 @@ import torch.nn.functional as F
 import numpy as np
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, dw):
         super(DownBlock, self).__init__()
-        self.double_conv = DoubleConv(in_channels, out_channels)
+        self.double_conv = DoubleConv(in_channels, out_channels, dw)
         self.down_sample = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1)
     
     def forward(self, x):
@@ -15,15 +15,35 @@ class DownBlock(nn.Module):
         return (down_out, skip_out)
 
 class DoubleConv(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, dw):
         super(DoubleConv, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-        self.relu = nn.ReLU(inplace=True)
+        if dw:
+            # Avoid using depthwise() pointwise() because literature explicitly avoids BatchNorm
+            self.conv = nn.Sequential(
+                # Depthwise Conv1
+                nn.Conv2d(in_channels,in_channels,kernel_size=3,stride=1,padding=1,bias=False,groups=in_channels),
+                nn.ReLU(inplace=True),
+                
+                # Depthwise Conv2
+                nn.Conv2d(in_channels,in_channels,kernel_size=3,stride=1,padding=1,bias=False,groups=in_channels),
+                nn.ReLU(inplace=True),
+                
+                # Pointwise Conv
+                nn.Conv2d(in_channels,out_channels,1,1,0,bias=False),
+                nn.ReLU(inplace=True),
+        )
+            
+        else: 
+            self.conv = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+            )
+        
     
     def forward(self, x):
-        x = self.relu(self.conv1(x))
-        return self.relu(self.conv2(x))
+        return self.conv(x)
     
 # NNConv taken from https://github.com/dwofk/fast-depth/blob/master/models.py (FastDepth 2019)  
 class NNConv(nn.Module):
