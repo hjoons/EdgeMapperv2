@@ -21,7 +21,8 @@ The fusion blocks are very straight forward element-wise addition and concat tec
 
 # Output of summary.py
 
-```----------------------------------------------------------------
+```
+----------------------------------------------------------------
         Layer (type)               Output Shape         Param #
 ================================================================
             Conv2d-1          [-1, 3, 480, 640]              27
@@ -121,4 +122,5 @@ Estimated Total Size (MB): 8046.17
 [INFO] Register zero_ops() for <class 'torch.nn.modules.container.Sequential'>.
 [INFO] Register count_normalization() for <class 'torch.nn.modules.batchnorm.BatchNorm2d'>.
 MACs: 29.511168 billion
-Parameters: 4.511672 million```
+Parameters: 4.511672 million
+```
