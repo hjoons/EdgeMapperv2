@@ -4,7 +4,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 from losses import ssim, depth_loss
@@ -25,8 +25,7 @@ def train(args):
         else "cpu"
     )
     logger.info(f"Now using device: {device}")
-    writer = SummaryWriter(args.log_directory)
-
+    # writer = SummaryWriter(args.log_directory)
 
     logger.info('Loading data...')
     train_loader = NewDataLoader(args, args.mode)
@@ -34,15 +33,24 @@ def train(args):
 
     model = MonoDepth().to(torch.device(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-    l1_criterion = torch.nn.L1Loss()
     
+    start = 0
+    
+    if args.use_ckpt:
+        logger.info('Loading checkpoint...')
+        checkpoint = torch.load(args.checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start = checkpoint['epoch']
+
+    l1_criterion = torch.nn.L1Loss()
 
     logger.info('Starting training...')
     model.train()
-
+    
     train_loss = []
     test_loss = []
-    for epoch in range(args.num_epochs):
+    for epoch in range(start, args.num_epochs):
         time_start = time.perf_counter()
         model = model.train()
         running_loss = 0
@@ -126,12 +134,12 @@ def train(args):
             test_loss.append(running_test_loss / len(test_loader))
             time_end = time.perf_counter()
 
-            if ((epoch + 1) % args.log_freq == 0):
-                writer.add_scalar('Loss/train', (running_loss / len(train_loader)), global_step=(epoch + 1))
-                writer.add_scalar('Loss/test', (running_loss / len(test_loader)), global_step=(epoch + 1))
+            # if ((epoch + 1) % args.log_freq == 0):
+            #     writer.add_scalar('Loss/train', (running_loss / len(train_loader)), global_step=(epoch + 1))
+            #     writer.add_scalar('Loss/test', (running_loss / len(test_loader)), global_step=(epoch + 1))
 
             logger.info(f'epoch: {epoch + 1} train loss: {running_loss / len(train_loader)} testing loss: {running_test_loss / len(test_loader)} time: {time_end - time_start}')
-    writer.close()
+    # writer.close()
 
 if __name__ == '__main__':
     pass

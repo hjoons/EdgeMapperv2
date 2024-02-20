@@ -9,6 +9,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',                 type=str,   help='path to the data', required=True)
     parser.add_argument('--gt_path',                   type=str,   help='path to the groundtruth data', required=True)
     parser.add_argument('--filenames_file',            type=str,   help='path to the filenames text file', required=True)
+    parser.add_argument('--use_ckpt',                              help='if set, will use specified checkpoint', action='store_true')
 
     parser.add_argument('--log_directory',             type=str,   help='directory to save checkpoints and summaries', default='')
     parser.add_argument('--checkpoint_path',           type=str,   help='path to a checkpoint to load', default='')
