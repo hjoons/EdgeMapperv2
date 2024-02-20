@@ -2,7 +2,7 @@
 --data_path=./sync 
 --gt_path=./sync 
 --filenames_file=nyudepthv2_train_files_with_gt_dense.txt 
---use_ckpt=1
+--use_ckpt
 --log_directory=./logs 
 --checkpoint_path=./ckpt/checkpoint_10.pt
 --checkpoint_freq=25 
