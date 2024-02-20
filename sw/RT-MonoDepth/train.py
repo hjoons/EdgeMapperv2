@@ -91,7 +91,7 @@ def train(args):
             optimizer.step()
 
         train_loss.append(running_loss / len(train_loader))
-        if ((epoch + 1) % args.checkpoint_freq == 0):
+        if ((epoch + 1) % int(args.checkpoint_freq) == 0):
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
