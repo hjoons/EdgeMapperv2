@@ -93,7 +93,7 @@ class DataLoadPreprocess(Dataset):
 
             if has_valid_depth:
                 depth_gt = np.asarray(depth_gt, dtype=np.float32)
-                depth_gt = np.expand_dims(depth_gt, axis=2)
+                depth_gt = np.expand_dims(depth_gt, axis=0)
                 depth_gt = depth_gt / 1000.0
 
             sample = {'image': image, 'depth': depth_gt}
