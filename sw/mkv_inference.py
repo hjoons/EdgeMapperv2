@@ -69,7 +69,7 @@ def convert_to_bgra_if_required(color_format: ImageFormat, color_image):
     return color_image
 
 # Load an MKV file
-def create_frames(vid_path: str, out_file: str):
+def create_frames(vid_path: str, out_file: str, interpolate: bool):
     # Load an MKV file
     if os.path.exists(f"{vid_path}"):
         mkv_file = f"{vid_path}"
@@ -79,11 +79,21 @@ def create_frames(vid_path: str, out_file: str):
 
     playback = PyK4APlayback(mkv_file)
     playback.open()
+    playback.seek(1) # in microseconds, aka 5 seconds
+    if playback.configuration['camera_fps'] == FPS.FPS_5:
+        fps = 5
+    elif playback.configuration['camera_fps'] == FPS.FPS_15:
+        fps = 15
+    else:
+        fps = 30
+    num_frames = int(playback.length / 1000000 * fps)
+    # print(f"Number of frames: {num_frames}")
 
     # print(type(playback))
     # Create a new HDF5 file
     file = h5py.File(f'{out_file}', 'w')
 
+    print("Creating h5 dataset")
     # Create datasets for RGB images and depth maps
     rgb_images = file.create_dataset('images', (0, 480, 640, 3), maxshape=(None, 480, 640, 3))
     depth_images = file.create_dataset('depths', (0, 480, 640), maxshape=(None, 480, 640))
@@ -100,14 +110,40 @@ def create_frames(vid_path: str, out_file: str):
                 rgb_images.resize(i + 1, axis=0)
                 rgb_images[i] = img_color
 
-            if capture.depth is not None:
+            if capture.transformed_depth is not None:
+                # img_depth = cv2.resize(capture.transformed_depth[80:720, 446: 926], (480, 640))
                 img_depth = capture.transformed_depth[120:600, 320:960]
+
+                if interpolate:
+                    ## Interpolation
+                    invalid_mask = img_depth == 0
+
+                    # Create coordinates for valid and invalid pixels
+                    rows, cols = np.indices(img_depth.shape)
+                    valid_coords = np.column_stack((rows[~invalid_mask], cols[~invalid_mask]))
+                    invalid_coords = np.column_stack((rows[invalid_mask], cols[invalid_mask]))
+
+                    # Values of valid pixels
+                    valid_values = img_depth[~invalid_mask]
+
+                    # Use griddata to interpolate missing values (linear)
+                    zi = interpolate.griddata(valid_coords, valid_values, invalid_coords, method='linear', fill_value=0)
+
+                    # Replace invalid values with interpolated values
+                    img_depth[invalid_mask] = zi
+
+                    # Inpaint the rest if interpolation didn't get it
+                    mask = (img_depth == 0).astype(np.uint8)
+                    if np.any(mask):
+                        # print(np.count_nonzero(mask))
+                        img_depth = cv2.inpaint(img_depth, mask, 2, flags=cv2.INPAINT_TELEA)
 
                 # Append the depth map to the dataset
                 depth_images.resize(i + 1, axis=0)
                 depth_images[i] = img_depth
 
             i += 1
+            print(f"\r  Frame: {i}/{num_frames} done", end='', flush=True)
 
             # key = cv2.waitKey(0)
             # if key != -1:
@@ -165,6 +201,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--vid_path', type=str, default='data/2021-04-08-15-57-50.mkv')
     parser.add_argument('--out_file', type=str, default='data/2021-04-08-15-57-50.h5')
+    parser.add_argument("--interpolate", action='store_true')
     parser.add_argument('--model_checkpoint', type=str, default='../mbnv3_epoch_100.pt')
 
     args = parser.parse_args()
@@ -172,7 +209,7 @@ def main():
     model = MobileNetSkipConcat()
     model.load_state_dict(torch.load(args.model_checkpoint))
 
-    create_frames(args.vid_path, args.out_file)
+    create_frames(args.vid_path, args.out_file, args.interpolate)
 
     inference(model, args.out_file)
 
