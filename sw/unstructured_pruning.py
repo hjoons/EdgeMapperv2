@@ -50,7 +50,7 @@ def compute_errors(gt, pred, epsilon=1e-6):
 
 def evaluate(model, dataloader):
     """
-    Evaluate a federated model on a dataset.
+    Evaluate a model on a dataset.
 
     Args:
         eval_dir (str): Path to the dataset for evaluation.
