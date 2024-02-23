@@ -406,6 +406,12 @@ def main3(args):
     )
 
     k4a = PyK4A(config)
+    height = args.height
+    width = args.width
+    start_height = (720 - height) // 2
+    start_width = (1280 - width) // 2
+    end_height = start_height + height
+    end_width = start_width + width
 
     # Open the device
     k4a.start()
@@ -424,8 +430,9 @@ def main3(args):
             transformed_depth_image = capture.transformed_depth
             transformed_depth_image = cv2.normalize(transformed_depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
             transformed_depth_image = cv2.applyColorMap(transformed_depth_image, cv2.COLORMAP_JET)
+            transformed_depth_image = transformed_depth_image[start_height:end_height, start_width:end_width]
             
-            color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_BGRA2RGB)[120:600, 320:960, 0:3]
+            color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_BGRA2RGB)[start_height:end_height, start_width:end_width, 0:3]
             color_image_tensor = torch.from_numpy(color_image_rgb)
             color_image_tensor = color_image_tensor.transpose(0, 1).transpose(0, 2).contiguous()
             color_image_tensor = color_image_tensor.float().div(255)
@@ -466,5 +473,7 @@ if __name__ == "__main__":
 #    main2()
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, help='path to the model', default='../mbnv3_epoch_100.pt')
+    parser.add_argument('--height ', type=int, help='height of the image', default=480)
+    parser.add_argument('--width', type=int, help='width of the image', default=640)
     args = parser.parse_args()
     main3(args)
