@@ -473,7 +473,7 @@ if __name__ == "__main__":
 #    main2()
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, help='path to the model', default='../mbnv3_epoch_100.pt')
-    parser.add_argument('--height ', type=int, help='height of the image', default=480)
+    parser.add_argument('--height', type=int, help='height of the image', default=480)
     parser.add_argument('--width', type=int, help='width of the image', default=640)
     args = parser.parse_args()
     main3(args)
