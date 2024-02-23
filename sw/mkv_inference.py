@@ -176,6 +176,9 @@ def main():
 
     inference(model, args.out_file)
 
+if __name__ == "__main__":
+    main()
+
     
 
 
