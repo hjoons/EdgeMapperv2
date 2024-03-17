@@ -57,9 +57,7 @@ def train(args):
         for batch_idx, batch in enumerate(train_loader.data):
             image = batch['image']
             depth = batch['depth']
-            
-            print(depth.max())
-            
+                        
             image = image.to(torch.device(device))
             depth = depth.to(torch.device(device))
             optimizer.zero_grad()
