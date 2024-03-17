@@ -1,20 +1,20 @@
 import torch
+import h5py
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 import numpy as np
 from PIL import Image
-import os
 import random
 
 _check_pil = lambda x: isinstance(x, Image.Image)
 
 _check_np_img = lambda x: isinstance(x, np.ndarray)
 
-class NewDataLoader(object):
+class NewH5DataLoader(object):
     def __init__(self, args, mode):
         if mode == 'train':
-            self.training_samples = DataLoadPreprocess(args, mode, transform=ToTensor())
+            self.training_samples = DataLoadH5Preprocess(args, mode, transform=ToTensor())
     
             self.data = DataLoader(self.training_samples,
                                    args.batch_size,
@@ -22,7 +22,7 @@ class NewDataLoader(object):
                                    num_workers=4)
 
         elif mode == 'eval':
-            self.testing_samples = DataLoadPreprocess(args, mode, transform=ToTensor())
+            self.testing_samples = DataLoadH5Preprocess(args, mode, transform=ToTensor())
             self.data = DataLoader(self.testing_samples,
                                    args.batch_size,
                                    shuffle=False,
@@ -33,76 +33,43 @@ class NewDataLoader(object):
     def __len__(self):
         return len(self.data)
 
-class DataLoadPreprocess(Dataset):
+class DataLoadH5Preprocess(Dataset):
     def __init__(self, args, mode, transform=None):
         self.args = args
-        if mode == 'eval':
-            with open(args.test_file_names, 'r') as f:
-                self.filenames = f.readlines()
-        else:
-            with open(args.train_file_names, 'r') as f:
-                self.filenames = f.readlines()
-    
         self.mode = mode
         self.transform = transform
+        if mode == 'train':
+            self.h5_file = h5py.File(args.train_path, 'r')
+        elif mode == 'eval':
+            self.h5_file = h5py.File(args.test_path, 'r')
+        else:
+            print('mode should be one of \'train\' or \'eval\'. Got {}'.format(mode))
     
     def __getitem__(self, idx):
-        sample_path = self.filenames[idx]
+        img = self.h5_file['images'][idx]
+        gt = self.h5_file['depths'][idx]
+        
+        pil_img = img / 255.0
+        pil_gt = gt / 1000.0
+        
+        # pil_img = Image.fromarray(img, 'RGB')
+        # pil_gt = Image.fromarray(gt, 'L')
+
+        # pil_img = np.asarray(pil_img, dtype=np.float32) / 255.0            
+        # pil_gt = np.asarray(pil_gt, dtype=np.float32) / 1000.0
+        
+        pil_gt = np.expand_dims(pil_gt, axis=0) 
 
         if self.mode == 'train':
-            rgb_file = sample_path.split()[0]
-            depth_file = sample_path.split()[1]
+            pil_img, pil_gt = self.train_preprocess(pil_img, pil_gt)
 
-            image_path = os.path.join(self.args.train_path, rgb_file)
-            depth_path = os.path.join(self.args.train_path, depth_file)
-
-            image = Image.open(image_path)
-            depth_gt = Image.open(depth_path)
-
-            # if self.args.do_random_rotate is True:
-            #     random_angle = (random.random() - 0.5) * 2 * self.args.degree
-            #     image = self.rotate_image(image, random_angle)
-            #     depth_gt = self.rotate_image(depth_gt, random_angle, flag=Image.NEAREST)
-            
-            image = np.asarray(image, dtype=np.float32) / 255.0
-            depth_gt = np.asarray(depth_gt, dtype=np.float32)
-            depth_gt = np.expand_dims(depth_gt, axis=0)
-
-            depth_gt = depth_gt / 1000.0
-
-            image, depth_gt = self.train_preprocess(image, depth_gt)
-
-
-
-            sample = {'image': image, 'depth': depth_gt}
-        else:
-            data_path = self.args.test_path
-
-            image_path = os.path.join(data_path, sample_path.split()[0])
-            image = np.asarray(Image.open(image_path), dtype=np.float32) / 255.0
-
-            depth_path = os.path.join(data_path, sample_path.split()[1])
-            
-            has_valid_depth = False
-            try:
-                depth_gt = Image.open(depth_path)
-                has_valid_depth = True
-            except IOError:
-                depth_gt = False
-                print('Missing gt for {}'.format(image_path))
-
-            if has_valid_depth:
-                depth_gt = np.asarray(depth_gt, dtype=np.float32)
-                depth_gt = np.expand_dims(depth_gt, axis=0)
-                depth_gt = depth_gt / 1000.0
-
-            sample = {'image': image, 'depth': depth_gt}
+        sample = {'image': pil_img, 'depth': pil_gt}
 
         if self.transform:
             sample = self.transform(sample)
-        
+
         return sample
-    
+
     def train_preprocess(self, image, depth_gt):
         # Random flipping
         do_flip = random.random()
@@ -135,12 +102,9 @@ class DataLoadPreprocess(Dataset):
         image_aug = np.clip(image_aug, 0, 1)
 
         return image_aug
-    
+
     def __len__(self):
-        return len(self.filenames)
-    
-# .48759459, .4179037, .400979
-# .28918479, .295918, .30836391
+        return len(self.h5_file['images'])
     
 class ToTensor(object):
     def __init__(self):
@@ -151,6 +115,9 @@ class ToTensor(object):
 
         image = self.to_tensor(image)
         image = self.normalize(image)
+
+        # put in expected range
+        # depth = torch.clamp(depth, 10, 1000)
 
         return {"image": image, "depth": depth}
 

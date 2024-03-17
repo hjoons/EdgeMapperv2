@@ -1,0 +1,17 @@
+#!/bin/bash
+
+train_path=../sync
+test_path=../test
+train_file_names=../nyudepthv2_train_files_with_gt_dense.txt
+test_file_names=../nyudepthv2_test_files_with_gt.txt
+
+batch_size=110
+epochs=200
+lr=0.0001
+
+ckpt_freq=10
+ckpt_dir=./ckpt
+ckpt_path=./ckpt/mbnv3_epoch_100.pt
+log_freq=100
+
+python runner.py --train_path=$train_path --test_path=$test_path --train_file_names=$train_file_names --test_file_names=$test_file_names --batch_size=$batch_size --epochs=$epochs --lr=$lr --ckpt_freq=$ckpt_freq --ckpt_dir=$ckpt_dir --log_freq=$log_freq
