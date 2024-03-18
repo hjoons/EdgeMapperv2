@@ -343,7 +343,7 @@ class MobileNetSkipConcat(nn.Module):
         super(MobileNetSkipConcat, self).__init__()
         self.output_size = output_size
 
-        mobilenet = models.mobilenet_v3_large(weights=MobileNet_V3_Large_Weights.DEFAULT)
+        mobilenet = models.mobilenet_v3_large()
         self.features = mobilenet.features
         kernel_size = 5
         self.decode_convs = nn.ModuleList([

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from ssim import SSIMLoss
+from loss import Depth_Loss
 from mobilenetv3 import MobileNetSkipConcat
 from dataloader import NewDataLoader
 from h5dataloader import NewH5DataLoader
@@ -65,7 +65,7 @@ def eval(args):
         checkpoint = torch.load(args.ckpt_path)
         model.load_state_dict(checkpoint['model_state_dict'])
     
-    criterion = SSIMLoss()
+    criterion = Depth_Loss(alpha=.1, beta=1, gamma=1, maxDepth=10.0)
     
     logger.info('Starting Evaluation...')
     
