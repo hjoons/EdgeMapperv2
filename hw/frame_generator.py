@@ -468,7 +468,7 @@ def main3(args):
 
 def main4():
     # camera inference using TensorRT model
-    model = trtModel('../mbnv3_fp16.trt')
+    model = trtModel('gdepth_int8.trt')
     print('Model Loaded!')
     print(f"Starting capture...")
     
@@ -487,6 +487,7 @@ def main4():
     # Start the cameras using the default configuration
     # fig, axs = plt.subplots(1, 3, figsize=(20, 7))
 
+
     while True:
         # Get a capture
         capture = k4a.get_capture()
@@ -499,18 +500,22 @@ def main4():
             transformed_depth_image = cv2.applyColorMap(transformed_depth_image, cv2.COLORMAP_JET)[120:600, 320:960, 0:1]
             
             color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_BGRA2RGB)[120:600, 320:960, 0:3]
+            color_image_rgb = color_image_rgb.transpose(2, 0, 1)
+            color_image_tensor = color_image_rgb / 255.0
+            #color_image_tensor = standardize(color_image_tensor)
+            
             #print(model_input)
             # model_input = convert_bgra_to_tensor(color_image)
             start_time = time.perf_counter()
-            pred = model.inference(color_image_rgb)
+            pred = model.inference(color_image_tensor)
             end_time = time.perf_counter()
             print(end_time - start_time)
-            pred = 1000 / pred[0][0]
+            # pred = 1000 / pred
             pred = cv2.normalize(pred, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
             pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
             # print(f"pred: {pred}")
             
-            cv2.imshow("Real-Time Video", color_image_rgb)
+            cv2.imshow("Real-Time Video", color_image_rgb.transpose(1, 2, 0))
             cv2.imshow("Depth Image", transformed_depth_image)
             cv2.imshow("Prediction", pred)
             elapsed_time = time.time() - start_time_all
@@ -520,7 +525,7 @@ def main4():
             
             if (cv2.waitKey(1) & 0xFF == ord('q')):
                 break
-            
+          
 
     # Stop the cameras and close the device
     k4a.device_stop_cameras()
@@ -536,9 +541,4 @@ if __name__ == "__main__":
 #    args = argsparser.parse_args()
 #    main(args.path)
 #    main2()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, help='path to the model', default='../mbnv3_epoch_100.pt')
-    parser.add_argument('--height', type=int, help='height of the image', default=480)
-    parser.add_argument('--width', type=int, help='width of the image', default=640)
-    args = parser.parse_args()
-    main3(args)
+    main4()
