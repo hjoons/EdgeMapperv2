@@ -16,6 +16,7 @@ import random
 import numpy as np
 import argparse
 from sw.mobilenetv3 import MobileNetSkipConcat
+from trt_inference import trtModel
 
 import torch
 from torch import nn
@@ -540,6 +541,70 @@ def main3(args):
 
     # # Close the OpenCV window
     # cv2.destroyAllWindows()
+
+def main4():
+    # camera inference using TensorRT model
+    model = trtModel('../mbnv3_fp16.trt')
+    print('Model Loaded!')
+    print(f"Starting capture...")
+    
+    config = Config(
+        color_resolution=ColorResolution.RES_720P,
+        depth_mode=DepthMode.NFOV_UNBINNED,
+        camera_fps=FPS.FPS_15
+        #color_format=pyk4a.ImageFormat.COLOR_BGRA32,
+    )
+
+    k4a = PyK4A(config)
+
+    # Open the device
+    k4a.start()
+
+    # Start the cameras using the default configuration
+    # fig, axs = plt.subplots(1, 3, figsize=(20, 7))
+
+    while True:
+        # Get a capture
+        capture = k4a.get_capture()
+        start_time_all = time.time()
+        if capture is not None:
+            # Get the color image from the capture
+            color_image = capture.color
+            transformed_depth_image = capture.transformed_depth
+            transformed_depth_image = cv2.normalize(transformed_depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            transformed_depth_image = cv2.applyColorMap(transformed_depth_image, cv2.COLORMAP_JET)[120:600, 320:960, 0:1]
+            
+            color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_BGRA2RGB)[120:600, 320:960, 0:3]
+            #print(model_input)
+            # model_input = convert_bgra_to_tensor(color_image)
+            start_time = time.perf_counter()
+            pred = model.inference(color_image_rgb)
+            end_time = time.perf_counter()
+            print(end_time - start_time)
+            pred = 1000 / pred[0][0]
+            pred = cv2.normalize(pred, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
+            # print(f"pred: {pred}")
+            
+            cv2.imshow("Real-Time Video", color_image_rgb)
+            cv2.imshow("Depth Image", transformed_depth_image)
+            cv2.imshow("Prediction", pred)
+            elapsed_time = time.time() - start_time_all
+            
+            delay_time = max(0, 0.0667 - elapsed_time)
+            time.sleep(delay_time)
+            
+            if (cv2.waitKey(1) & 0xFF == ord('q')):
+                break
+            
+
+    # Stop the cameras and close the device
+    k4a.device_stop_cameras()
+    k4a.device_close()
+
+    # Close the OpenCV window
+    cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
 #    argsparser = argparse.ArgumentParser()
