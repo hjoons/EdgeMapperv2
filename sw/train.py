@@ -1,13 +1,17 @@
 import time
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 import torch
 import pandas as pd
 
 from torch.optim.lr_scheduler import StepLR
-from dataloader import NewDataLoader
+from dataloader import get_loader
 from h5dataloader import NewH5DataLoader
 from mobilenetv3 import MobileNetSkipConcat
+from GuidedDepth.model.loader import load_model
 from utils.setup_funcs import init_logger, init_seeds
 from eval import compute_errors
 from loss import Depth_Loss
@@ -17,24 +21,30 @@ def train(args):
     logging_prefix = args.logname
     logger = init_logger(f"{logging_prefix}/seed{args.seed}")
     device = (
-        "cuda:2"
+        "cuda:1"
         if torch.cuda.is_available()
         else "mps"
         if torch.backends.mps.is_available()
         else "cpu"
     )
 
+    # split = 'eval' if args.eval else 'train'
+
     logger.info(f"Now using device: {device}")
     
     logger.info('Loading data...')
     
-    train_loader = NewH5DataLoader(args, 'train') if ('.h5' in args.train_path or '.mat' in args.train_path) else NewDataLoader(args, 'train')
-    test_loader = NewH5DataLoader(args, 'eval') if ('.h5' in args.test_path or '.mat' in args.test_path) else NewDataLoader(args, 'eval')
+    train_loader = get_loader(args.train_path, args.batch_size, 'train')
+    test_loader = get_loader(args.train_path, args.batch_size, 'eval')
+
+    # train_loader = NewH5DataLoader(args, 'train') if ('.h5' in args.train_path or '.mat' in args.train_path) else NewDataLoader(args, 'train')
+    # test_loader = NewH5DataLoader(args, 'eval') if ('.h5' in args.test_path or '.mat' in args.test_path) else NewDataLoader(args, 'eval')
     
-    model = MobileNetSkipConcat()
+    # model = MobileNetSkipConcat()
+    model = load_model('GuideDepth', None)
     model = model.to(torch.device(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler = StepLR(optimizer, step_size=15, gamma=0.1)
     
     start = 0
     
@@ -56,7 +66,7 @@ def train(args):
         time_start = time.perf_counter()
         model = model.train()
         running_loss = 0
-        for batch_idx, batch in enumerate(train_loader.data):
+        for batch_idx, batch in enumerate(train_loader):
             image = batch['image']
             depth = batch['depth']
                         
@@ -72,7 +82,7 @@ def train(args):
             running_loss += cpu_loss
             
             if (batch_idx + 1) % args.log_freq == 0:
-                logger.info(f'Batch {batch_idx + 1} / {len(train_loader.data)} || Loss: {running_loss / (batch_idx + 1)}')
+                logger.info(f'Batch {batch_idx + 1} / {len(train_loader)} || Loss: {running_loss / (batch_idx + 1)}')
 
             loss.backward()
 
@@ -92,7 +102,7 @@ def train(args):
         with torch.no_grad():
             running_test_loss = 0
             errors = []
-            for batch_idx, batch in enumerate(test_loader.data):
+            for batch_idx, batch in enumerate(test_loader):
                 image = batch['image']
                 depth = batch['depth']
                                 

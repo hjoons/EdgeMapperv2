@@ -24,7 +24,8 @@ class NewH5DataLoader(object):
         elif mode == 'eval':
             self.testing_samples = DataLoadH5Preprocess(args, mode, transform=ToTensor())
             self.data = DataLoader(self.testing_samples,
-                                   args.batch_size,
+                                #    args.batch_size,
+                                   batch_size=1,
                                    shuffle=False,
                                    num_workers=1)
         else:

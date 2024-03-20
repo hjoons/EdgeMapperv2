@@ -7,8 +7,6 @@ if __name__ == '__main__':
     
     parser.add_argument('--train_path',         help='Training dataset path', type=str, required=True)
     parser.add_argument('--test_path',          help='Testing dataset path', type=str, required=True)
-    parser.add_argument('--train_file_names',   help='Path to training dataset splits', type=str, required=True)
-    parser.add_argument('--test_file_names',    help='Path to testing dataset splits', type=str, required=True)
     
     parser.add_argument('--eval',               help='Set to enable eval mode only', action='store_true')
     parser.add_argument('--batch_size',         help='Batch size for training', type=int, default=60)
@@ -24,6 +22,8 @@ if __name__ == '__main__':
     parser.add_argument('--logname',            help='Name for log files', type=str, default='train_logs')
     
     args = parser.parse_args()
+    
+    print(args.eval)
     
     if args.eval:
         eval(args)

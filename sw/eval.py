@@ -3,7 +3,7 @@ import numpy as np
 
 from loss import Depth_Loss
 from mobilenetv3 import MobileNetSkipConcat
-from dataloader import NewDataLoader
+from dataloader import get_loader
 from h5dataloader import NewH5DataLoader
 from utils.setup_funcs import init_logger, init_seeds
 
@@ -56,7 +56,9 @@ def eval(args):
     
     logger.info('Loading data...')
     
-    test_loader = NewH5DataLoader(args, 'eval') if ('.h5' in args.test_path or '.mat' in args.test_path) else NewDataLoader(args, 'eval')
+    test_loader = get_loader(args.train_path, args.batch_size, 'eval')
+
+    # test_loader = NewH5DataLoader(args, 'eval') if ('.h5' in args.test_path or '.mat' in args.test_path) else NewDataLoader(args, 'eval')
     model = MobileNetSkipConcat()
     model = model.to(torch.device(device))
             
@@ -73,7 +75,7 @@ def eval(args):
     with torch.no_grad():
         running_test_loss = 0
         errors = []
-        for batch_idx, batch in enumerate(test_loader.data):
+        for batch_idx, batch in enumerate(test_loader):
             image = batch['image']
             depth = batch['depth']
 
@@ -89,8 +91,8 @@ def eval(args):
             cpu_loss = loss.cpu().detach().numpy()
             running_test_loss += cpu_loss
             
-            if (batch_idx + 1) % (len(test_loader.data) // 4) == 0:
-                logger.info(f'{batch_idx + 1} / {len(test_loader.data)}')
+            if (batch_idx + 1) % (len(test_loader) // 4) == 0:
+                logger.info(f'{batch_idx + 1} / {len(test_loader)}')
             
         error_tensors = [torch.tensor(e).to(device) for e in errors]
         error_stack = torch.stack(error_tensors, dim=0)
