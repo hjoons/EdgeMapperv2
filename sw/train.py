@@ -110,6 +110,9 @@ def train(args):
                 depth = depth.to(torch.device(device))
                 
                 pred = model(image)
+
+                pred = 10.0 / pred
+                pred = torch.clamp(pred, 10.0 / 100.0, 10.0)
                 
                 loss = criterion(pred, depth)
 
