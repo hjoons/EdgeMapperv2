@@ -48,6 +48,8 @@ class trtModel():
 		
 		in_type = trt_to_np(engine.get_tensor_dtype(engine[0]))
 		out_type = trt_to_np(engine.get_tensor_dtype(engine[1]))
+		print(in_type)
+		print(out_type)
 		
 		in_shape = self.context.get_tensor_shape(engine[0])
 		self.out_shape = self.context.get_tensor_shape(engine[1])
@@ -81,7 +83,7 @@ class trtModel():
 		# synchronize threads
 		self.stream.synchronize()
 		
-		return self.h_output
+		return np.reshape(self.h_output, self.out_shape[2:])
 		
 	def reload_model(self, model_pth: str):
 		"""
@@ -113,10 +115,11 @@ if __name__ == "__main__":
 		break
 	
 	# initialize model with fp32 model
-	model = trtModel('mbnv3.trt')
+	model = trtModel('gdepth_int8.trt')
 	
 	# benchmark model
 	times = []
+	print(image.shape)
 	for num in range(1000):
 		t_start = perf_counter()
 		pred = model.inference(image)
@@ -125,13 +128,13 @@ if __name__ == "__main__":
 			times.append(t_stop - t_start)
 		
 	print(f'Avg per inference (after warming up): {np.mean(times)}')
-	plt.imshow(pred[0][0])
-	plt.title('TensorRT fp32 Inference')
+	plt.imshow(pred)
+	plt.title('TensorRT int8 Inference')
 	plt.show()
 	
 	# reload with fp16 model
 	# reloading can be used when receiving a new global model via federated learning since it will have the same input and output shape and type
-	model.reload_model('mbnv3_fp16.trt')
+	model.reload_model('gdepth_int8.trt')
 	
 	# benchmark model
 	times = []
@@ -143,8 +146,7 @@ if __name__ == "__main__":
 			times.append(t_stop - t_start)
 		
 	print(f'Avg per inference (after warming up): {np.mean(times)}')
-	plt.imshow(pred[0][0])
-	plt.title('TensorRT fp16 Inference')
+	plt.imshow(pred)
+	plt.title('TensorRT int8 Inference')
 	plt.show()
 		
-
