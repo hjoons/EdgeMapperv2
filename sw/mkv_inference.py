@@ -177,7 +177,7 @@ def inference(model, h5_file):
 
         errors.append(compute_errors(labels, outputs))
 
-    error_tensors = [torch.tensor(e).to(device) for e in errors]
+    error_tensors = [torch.tensor(e).to(torch.device('cpu')) for e in errors]
 
     error_stack = torch.stack(error_tensors, dim=0)
 
@@ -199,15 +199,15 @@ def inference(model, h5_file):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vid_path', type=str, default='data/2021-04-08-15-57-50.mkv')
-    parser.add_argument('--out_file', type=str, default='data/2021-04-08-15-57-50.h5')
+    parser.add_argument('--vid_path', type=str, default='../output.mkv')
+    parser.add_argument('--out_file', type=str, default='../output.h5')
     parser.add_argument("--interpolate", action='store_true')
     parser.add_argument('--model_checkpoint', type=str, default='../mbnv3_epoch_100.pt')
 
     args = parser.parse_args()
 
     model = MobileNetSkipConcat()
-    model.load_state_dict(torch.load(args.model_checkpoint))
+    model.load_state_dict(torch.load(args.model_checkpoint)['model_state_dict'])
 
     create_frames(args.vid_path, args.out_file, args.interpolate)
 
