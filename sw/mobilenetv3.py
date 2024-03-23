@@ -371,6 +371,20 @@ class MobileNetSkipConcat(nn.Module):
                 x = torch.cat((x, skips[3 - i]), 1)
         x = self.decode_conv5(x)
         return x
+    
+    def reload_weights(self, weights_path="net.pth"):
+        # Load the weights from the given file path
+        state_dict = torch.load(weights_path)
+        # Update the current model state with the loaded state dictionary
+        self.load_state_dict(state_dict)
+        print("Model weights reloaded successfully.")
+
+    def save_weights(self, weights_path="net.pth"):
+        # Get the model's current state dictionary
+        state_dict = self.state_dict()
+        # Save the state dictionary to the specified path
+        torch.save(state_dict, weights_path)
+        print("Model weights saved successfully.")
 
 import torch
 from torchsummary import summary
