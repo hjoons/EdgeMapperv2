@@ -20,7 +20,7 @@ from loss import Depth_Loss
 import numpy as np
 
 def inference_thread():
-    fps = 24
+    fps = 16
     time_per_frame = 1 / fps  # 0.041666666666666664 = 41.6ms
     # Pre-trained weights
     model_path = "net.pth"
@@ -34,10 +34,7 @@ def inference_thread():
     modelI = torch.load(model_path)
     modelI.eval()
     
-    pred_time = []
     pred_frames = 0
-
-    last_mod_time = os.path.getmtime(model_path)
 
     print(f"Starting capture...")
     config = Config(
@@ -63,19 +60,10 @@ def inference_thread():
         start_time_all = time.time()
         if stop_event.is_set():
             break
-        # if os.path.getmtime(model_path) != last_mod_time:
-            
-        #     # For pruned PyTorch
-        #     modelI = torch.load(model_path)
-
-        #     # For unpruned PyTorch
-        #     # modelI.reload_weights()
-
-        #     modelI.eval()
-            
-        #     last_mod_time = os.path.getmtime(model_path)
 
         if weight_buffer.full():
+            print('Updating model...')
+            # Assuming we are working with a pruned model
             modelI = weight_buffer.get()
             modelI.eval()
 
@@ -87,13 +75,19 @@ def inference_thread():
             transformed_depth_image = capture.transformed_depth
 
             transformed_depth_image = transformed_depth_image[start_height:end_height, start_width:end_width] / 10000.0
-
-            transformed_depth_image = (transformed_depth_image * 255).astype(np.uint8)        
-            transformed_depth_image = cv2.applyColorMap(transformed_depth_image, cv2.COLORMAP_JET)
+            # zeros = transformed_depth_image == 0.0
+            # transformed_depth_image[zeros] = 0.9
+            # print(f"Numpy image min: {np.min(transformed_depth_image)}")
+            
+            transformed_depth_image_int8 = (transformed_depth_image * 255).astype(np.uint8)        
+            transformed_depth_image_int8 = cv2.applyColorMap(transformed_depth_image_int8, cv2.COLORMAP_JET)
             
             # depth tensor used in training
-            depth_tensor = torch.from_numpy(capture.transformed_depth[start_height:end_height, start_width:end_width].astype('float32'))
-            depth_tensor.unsqueeze(0)
+            # depth_tensor = torch.from_numpy(capture.transformed_depth[start_height:end_height, start_width:end_width])
+            # depth_tensor.unsqueeze(0)
+
+            depth_np = capture.transformed_depth[start_height:end_height, start_width:end_width]
+            color_np = color_image[start_height:end_height, start_width:end_width, 0:3]
                         
             color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_RGBA2RGB)[start_height:end_height, start_width:end_width, 0:3]
             color_image_tensor = torch.from_numpy(color_image_rgb)
@@ -111,7 +105,7 @@ def inference_thread():
                 # Remove the oldest item to make space for the new one
                 buffer.get()  # This line removes the oldest entry from the queue
 
-            buffer.put((color_image_tensor.cpu(), depth_tensor.cpu()))  # Move image back to CPU before storing in buffer
+            buffer.put((color_np, depth_np))  # Move image back to CPU before storing in buffer
 
             # print("Added a new entry to the buffer.")
 
@@ -126,28 +120,31 @@ def inference_thread():
                 #     pred_time.append((pred_end - pred_start))
 
                 pred = pred.detach().squeeze(0).squeeze(0).cpu().numpy()
+
+                zero_mask = pred == 0.0
+                
+                pred = np.clip(pred, 10.0/100.0, 10.0) 
                 pred = 10.0 / pred
+
+                pred[zero_mask] = 0.0
 
                 pred = ((pred / 10.0) * 255).astype(np.uint8)
                 pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
             
             cv2.imshow("Real-Time Video", color_image_rgb)
-            cv2.imshow("Depth Image", transformed_depth_image)
+            cv2.imshow("Depth Image", transformed_depth_image_int8)
             cv2.imshow("Prediction", pred)
             time.sleep(max(0., time_per_frame - (time.time() - start_time_all)))
             
-            if pred_frames < 1000:
-                with open('inference_time.csv', 'a+') as f:
-                    f.write(f"{pred_end - pred_start}\n")
-            else:
-                print('Reached 1000 frames')
+
+            # Evaluating latency metrics
+            # if pred_frames < 1000:
+            #     with open('inference_time.csv', 'a+') as f:
+            #         f.write(f"{pred_end - pred_start}\n")
+            # else:
+            #     print('Reached 1000 frames')
 
             pred_frames += 1
-            
-            # if pred_frames % 120 == 30:
-            #     print(f'Avg inference time: {np.mean(pred_time):f}s')
-            #     print(f'Standard deviation of inference time: {np.std(pred_time):f}s')
-            #     print(f'Min: {np.min(pred_time)}, Max: {np.max(pred_time)}')
 
             if (cv2.waitKey(1) & 0xFF == ord('q')):
                 break
@@ -170,63 +167,69 @@ def training_thread():
     modelT.train()
     
     criterion = Depth_Loss(alpha=.1, beta=1, gamma=1, maxDepth=10.0)
-    optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.001)
 
-    train_time = []
+    # Maybe play around with lr
+    optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.0001)
+
+    print('NYU base loading...')
+    f = open('nyu_buffer.pickle', 'rb')
+    nyu_base = list(pkl.load(f))
+    nyu_base = nyu_base[:32]
+    f.close()
+
     train_num = 0
     while True:
-        # if buffer.qsize() >= max_buffer_size:
+        if buffer.qsize() >= max_buffer_size:
         # Create a dataset from the buffer for training
-        with open('buffer.pickle', 'rb') as f:
-            dataset = pkl.load(f)
-        
-            # dataset = [buffer.get() for _ in range(max_buffer_size)]
-        
+            
+            dataset = [buffer.get() for _ in range(max_buffer_size)]
+            dataset.extend(nyu_base)
             dataset = get_loader(dataset, max_buffer_size)
 
             # Training step
-            for epoch in range(100):
-                train_start = time.time()
+            # for epoch in range(100):
+            train_start = time.time()
+            running_loss = 0
+            for batch_idx, batch in enumerate(dataset):
+                print(f'{batch_idx + 1} / {len(dataset)}')
+                images = batch['image'].to(device)
+                depth = batch['depth'].to(device)
 
-                for batch_idx, batch in enumerate(dataset):
-                    
-                    images = batch['image'].to(device)
-                    depth = batch['depth'].to(device)
+                # print(f'Images: {images}')
+                # print(f'Depths: {depth.min()}, {depth.max()}')
 
-                    optimizer.zero_grad()
-                    outputs = modelT(images)
+                optimizer.zero_grad()
+                outputs = modelT(images)
 
-                    loss = criterion(outputs, depth)
-                    loss.backward()
-                    
-                    optimizer.step()
+                loss = criterion(outputs, depth)
+                running_loss += loss.item()
+                loss.backward()
+                
+                optimizer.step()
 
-                train_end = time.time()
+            train_end = time.time()
 
-                if train_num < 125:
-                    with open('train_time.csv', 'a+') as f:
-                        f.write(f"{train_end - train_start}\n")
-                else:
-                    print('Reached 125 train_num')
-                    exit(-1)
+            # if train_num < 125:
+            #     with open('train_time.csv', 'a+') as f:
+            #         f.write(f"{train_end - train_start}\n")
+            # else:
+            #     print('Reached 125 train_num')
+            #     exit(-1)
 
-            # if train_num > 25:  
-            #     train_time.append((train_end - train_start))
-            #     if train_num > 26:
-            #         print(f"Trained on a batch of {max_buffer_size} images. Loss: {loss.item():f} Avg time: {np.mean(train_time):f}s Standard deviation of time: {np.std(train_time):f}s")
+            print(f"Trained on a batch of {max_buffer_size} images. Loss: {running_loss / len(dataset)}:f over {train_end - train_start}s")
 
-                train_num += 1
+            train_num += 1
 
             # For unpruned PyTorch
             # modelT.save_weights("net_full.pth")
                 
-            # For pruned PyTorch
+            # # For pruned PyTorch
             # torch.save(modelT, 'net.pth')
             
-            # if weight_buffer.empty():
-            #     weight_buffer.put(modelT)
-        # else:
-        #     time.sleep(1)  # Wait for the buffer to fill
+            if weight_buffer.empty():
+                weight_buffer.put(modelT)
+        else:
+            time.sleep(1)  # Wait for the buffer to fill
 
 # # Set up the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -265,10 +268,10 @@ max_buffer_size = 8  # Define the maximum size of the buffer
 stop_event = threading.Event()
 def run_oit():
     # Starting the threads
-    # inference = threading.Thread(target=inference_thread)
+    inference = threading.Thread(target=inference_thread)
     training = threading.Thread(target=training_thread)
 
-    # inference.start()
+    inference.start()
     training.start()
 
     # Running for a limited time or until a certain condition, then stopping

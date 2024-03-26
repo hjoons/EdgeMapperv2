@@ -29,12 +29,16 @@ class ToTensor(object):
             """
             depth = depth / 1000.0
             image, depth = transformation(image), transformation(depth)
+            # image = image.transpose(0, 1).transpose(1, 2).contiguous()
+
+            # depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
+            # depth = self.maxDepth / depth
         else:
             depth = depth / 255.0 * 10.0
+            # depth = depth / 100.0
 
             zero_mask = depth == 0.0
             image, depth = transformation(image), transformation(depth)
-
             depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
             depth = self.maxDepth / depth
 

@@ -1,4 +1,5 @@
 import torch
+import cv2
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -10,16 +11,20 @@ class OTIDataset(Dataset):
         self.transform = transform
 
     def __getitem__(self, idx):
-        to_image = transforms.ToPILImage()
-        to_depth = transforms.ToPILImage()
-        
         img = self.data[idx][0]
         depth = self.data[idx][1]
 
-        pil_img = to_image(img)
-        pil_depth = to_depth(depth)
+        if isinstance(img, np.ndarray):
+            img = Image.fromarray(img)
+        if isinstance(depth, np.ndarray):
+            depth = (depth / 10000.0 * 255.0).astype('uint8')
+            mask = np.where(depth == 0, 0, 255).astype('uint8')
+            depth = cv2.inpaint(depth, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            depth = Image.fromarray(depth)
 
-        sample = {'image': pil_img, 'depth': pil_depth}
+
+        # sample = {'image': pil_img, 'depth': pil_depth}
+        sample = {'image': img, 'depth': depth}
 
         if self.transform:
             sample = self.transform(sample)
