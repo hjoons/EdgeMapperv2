@@ -1,15 +1,10 @@
 import threading
 import queue
 import torch
-import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Subset
 import time
-from torch import nn
-import torch.nn.functional as F
 from GuideDepth.model.loader import load_model
 import matplotlib.pyplot as plt
-import pyk4a
 from pyk4a import PyK4A, Config, FPS, DepthMode, ColorResolution
 import cv2
 from dataloader import get_loader
@@ -22,7 +17,7 @@ import random
 
 RESOLUTION = (240,320)
 BATCH_SIZE = 8
-SAMPLE_PROB = 0.25
+SAMPLE_PROB = 0.5
 KEEP_PROB = 0.5
 
 def inference_thread():
@@ -75,6 +70,7 @@ def inference_thread():
             # Assuming we are working with a pruned model
             modelI = weight_buffer.get()
             modelI.eval()
+            print('Model updated!\n')
 
         if capture is not None:
             # Get the color image from the capture
@@ -85,9 +81,10 @@ def inference_thread():
             color_image = resize_transform(color_image)
             color_image = color_image.transpose(0,2).transpose(0,1).numpy()
 
-            # transformed_depth_image purely for display
+            # transformed_depth_image
             transformed_depth_image = capture.transformed_depth[start_height:end_height, start_width:end_width]
 
+            # inpainting depth image
             mask = (transformed_depth_image == 0).astype(np.uint8)
             transformed_depth_image = cv2.inpaint(transformed_depth_image, mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
 
@@ -96,13 +93,13 @@ def inference_thread():
             transformed_depth_image = resize_transform(transformed_depth_image.unsqueeze(0))
             transformed_depth_image_np = transformed_depth_image.squeeze(0).numpy()
 
-            valid_mask = (transformed_depth_image_np != 0)
-            valid_mask = np.expand_dims(valid_mask, axis=-1)
+            # valid_mask = (transformed_depth_image_np != 0)
+            # valid_mask = np.expand_dims(valid_mask, axis=-1)
             transformed_depth_image = transformed_depth_image_np / 10000.0
             
             transformed_depth_image_int8 = (transformed_depth_image * 255).astype(np.uint8)        
             transformed_depth_image_int8 = cv2.applyColorMap(transformed_depth_image_int8, cv2.COLORMAP_JET)
-            transformed_depth_image_int8 = transformed_depth_image_int8 * valid_mask
+            # transformed_depth_image_int8 = transformed_depth_image_int8 * valid_mask
 
 
             # depth_np = capture.transformed_depth[start_height:end_height, start_width:end_width]
@@ -118,12 +115,6 @@ def inference_thread():
             if random.random() < SAMPLE_PROB:
                 # Put the (image, label) tuple in the buffer
                 if buffer.qsize() >= max_buffer_size:
-                    # print("Removed the oldest entry from the buffer.")
-                    # data = [buffer.get() for _ in range(max_buffer_size)]
-                    # with open('buffer.pickle', 'wb') as f:
-                    #     pkl.dump(data, f)
-                    # exit(-1)
-
                     # Remove the oldest item to make space for the new one
                     buffer.get()  # This line removes the oldest entry from the queue
 
@@ -157,13 +148,6 @@ def inference_thread():
             cv2.imshow("Depth Image", transformed_depth_image_int8)
             cv2.imshow("Prediction", pred)
             time.sleep(max(0., time_per_frame - (time.time() - start_time_all)))
-
-
-            # times.append(time.time()- s)
-            # if pred_frames % 20 == 0:
-            #     print(f'{np.mean(times)} avg time for plotting')
-            #     times = []
-            
 
             # Evaluating latency metrics
             # if pred_frames < 1000:
@@ -204,9 +188,9 @@ def training_thread():
     ax1.legend(loc='upper right', bbox_to_anchor=(1,1))
     ax1.grid(True)
 
-    d_1, = ax2.plot([],[], color="purple", label="d1")
-    d_2, = ax2.plot([],[], color="pink", label="d2")
-    d_3, = ax2.plot([],[], color="brown", label="d3")
+    d_1, = ax2.plot([],[], color="purple", label=r'$\delta$1')
+    d_2, = ax2.plot([],[], color="pink", label=r'$\delta$2')
+    d_3, = ax2.plot([],[], color="brown", label=r'$\delta$3')
     ax2.legend(loc='lower right', bbox_to_anchor=(1,0))
     ax2.set_xlabel("Epochs")
     ax2.grid(True)
@@ -223,9 +207,9 @@ def training_thread():
     criterion = Depth_Loss(alpha=.1, beta=1, gamma=1, maxDepth=10.0)
 
     # Maybe play around with lr
-    optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.0001)
+    optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.001)
 
-    print('NYU base loading...')
+    # print('NYU base loading...')
     f = open('nyu2_base.pickle', 'rb')
     nyu_base = list(pkl.load(f))
     nyu_base = nyu_base[:16]
@@ -235,44 +219,35 @@ def training_thread():
     while True:
         if buffer.qsize() >= max_buffer_size:
         # Create a dataset from the buffer for training            
-            modelT.train()
 
-            dataset = [buffer.get() for _ in range(max_buffer_size)]
+            inf_dataset = [buffer.get() for _ in range(max_buffer_size)]
 
             # keep some older images, i.e. replay buffer
-            for ind in dataset:
+            for ind in inf_dataset:
                 if random.random() < KEEP_PROB:
                     buffer.put((copy.deepcopy(ind[0]), copy.deepcopy(ind[1])))
             
-            dataset.extend(nyu_base)
-            dataset = get_loader(dataset, BATCH_SIZE, RESOLUTION, 'train')
+            
             # with open('dataloader.pkl', 'wb') as f:
             #     pkl.dump(dataset, f)
-            
-            # Training step            
+
+            print('Evaluating model...')
+            modelT.eval()
+            dataset = get_loader(copy.deepcopy(inf_dataset), BATCH_SIZE, RESOLUTION, 'eval')
+            # Eval
             errors = []
-            train_start = time.time()
             running_loss = 0
-            for batch_idx, batch in enumerate(dataset):
-                print(f'{batch_idx + 1} / {len(dataset)}')
-                images = batch['image'].to(device)
-                depth = batch['depth'].to(device)
+            with torch.no_grad():
+                for batch_idx, batch in enumerate(dataset):
+                    print(f'{batch_idx + 1} / {len(dataset)}')
+                    images = batch['image'].to(device)
+                    depth = batch['depth'].to(device)
 
-                optimizer.zero_grad()
-                outputs = modelT(images)
+                    outputs = modelT(images)
 
-                err_pred = 10.0 / outputs
-                err_pred = torch.clamp(err_pred, 10.0 / 100.0, 10.0)
-                errors.append(compute_errors(depth, err_pred))
-
-
-                loss = criterion(outputs, depth)
-                running_loss += loss.item()
-                loss.backward()
-                
-                optimizer.step()
-
-            train_end = time.time()
+                    outputs = 10.0 / outputs
+                    outputs = torch.clamp(outputs, 10.0 / 100.0, 10.0)
+                    errors.append(compute_errors(depth, outputs))
 
             error_tensors = [torch.tensor(e).to('cuda') for e in errors]
             error_stack = torch.stack(error_tensors, dim=0)
@@ -294,9 +269,47 @@ def training_thread():
             d1s.append(d1)
             d2s.append(d2)
             d3s.append(d3)
+            # print(f'abs_rel: {abs_rel}\nsq_rel: {sq_rel}\nrmse: {rmse}\nrmse_log: {rmse_log}\nd1: {d1}\nd2: {d2}\n d3: {d3}\n')
+
+            absr.set_data(epochs, abs_rels)
+            sqr.set_data(epochs, sq_rels)
+            rms.set_data(epochs, rmses)
+            rmsel.set_data(epochs, rmse_logs)
+            d_1.set_data(epochs, d1s)
+            d_2.set_data(epochs, d2s)
+            d_3.set_data(epochs, d3s)
+
+            ax1.relim()
+            ax1.autoscale_view()
+            ax2.set_ylim(0,1)
+            ax2.autoscale_view()
+            plt.draw()
+            plt.pause(0.1)
+            print('Model Evaluated!\n')
+            
+            modelT.train()
+            inf_dataset.extend(nyu_base)
+            dataset = get_loader(inf_dataset, BATCH_SIZE, RESOLUTION, 'train')
+            print('Training model...')
+            # Training step            
+            train_start = time.time()
+            for batch_idx, batch in enumerate(dataset):
+                print(f'{batch_idx + 1} / {len(dataset)}')
+                images = batch['image'].to(device)
+                depth = batch['depth'].to(device)
+
+                optimizer.zero_grad()
+                outputs = modelT(images)
+
+                loss = criterion(outputs, depth)
+                running_loss += loss.item()
+                loss.backward()
+                
+                optimizer.step()
+
+            train_end = time.time()
         
-            print(f"Trained on a batch of {max_buffer_size} images. Loss: {running_loss / len(dataset)}:f over {train_end - train_start}s")
-            print(f'abs_rel: {abs_rel}\nsq_rel: {sq_rel}\nrmse: {rmse}\nrmse_log: {rmse_log}\nd1: {d1}\nd2: {d2}\n d3: {d3}\n')
+            print('Trained on a batch of {:d} images. Loss: {:.5f} over {:.5f}s'.format(max_buffer_size + len(nyu_base), running_loss / len(dataset), train_end - train_start))
 
             # if train_num < 125:
             #     with open('train_time.csv', 'a+') as f:
@@ -315,20 +328,6 @@ def training_thread():
                 weight_buffer.put(copy.deepcopy(modelT))
 
             
-            absr.set_data(epochs, abs_rels)
-            sqr.set_data(epochs, sq_rels)
-            rms.set_data(epochs, rmses)
-            rmsel.set_data(epochs, rmse_logs)
-            d_1.set_data(epochs, d1s)
-            d_2.set_data(epochs, d2s)
-            d_3.set_data(epochs, d3s)
-
-            ax1.relim()
-            ax1.autoscale_view()
-            ax2.set_ylim(0,1)
-            ax2.autoscale_view()
-            plt.draw()
-            plt.pause(0.1)
             
         else:
             time.sleep(1)  # Wait for the buffer to fill
@@ -342,29 +341,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # modelG.train()  # Make sure the model is in training mode
 # modelG.save_weights()
 
-# from thop import profile
-
-# modelG.eval()
-# with torch.no_grad():
-#     input_data = torch.randn(1, 3, 240, 320).cuda()
-#     macs, params = profile(modelG, inputs=(input_data,))
-#     print(macs)
-#     print(params)
-
-# exit(-1)
-
 # Assuming you have a pruned PyTorch checkpoint
 modelG = torch.load('prune/ignored_pruned_model_0.3.pt')
 modelG.train()
 torch.save(modelG, 'net.pth')
 
 modelG = None
-# # Criterion and optimizer
 
 # The buffer to store data for training
-buffer = queue.Queue()
-weight_buffer = queue.Queue(maxsize=1)
 max_buffer_size = 16  # Define the maximum size of the buffer
+buffer = queue.Queue(maxsize=max_buffer_size)
+weight_buffer = queue.Queue(maxsize=1)
 
 # Stop event to cleanly exit threads
 stop_event = threading.Event()

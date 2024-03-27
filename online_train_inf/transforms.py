@@ -46,27 +46,15 @@ class ToTensor(object):
             """
             depth = depth / 1000.0
             image, depth = transformation(image), transformation(depth)
-            # image = image.transpose(0, 1).transpose(1, 2).contiguous()
-
-            # depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
-            # depth = self.maxDepth / depth
         else:
             depth = depth / 255.0 * 10.0
-            # depth = depth / 100.0
 
-            # zero_mask = depth == 0.0
             valid_mask = depth != 0
             depth[valid_mask] = self.maxDepth / depth[valid_mask]
-            # depth[:, zero_mask] = 0.0
             image, depth = transformation(image), transformation(depth)
             zero_mask = depth == 0
             depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
             depth[zero_mask] = 0.0
-
-        
-
-        # print('Depth after, min: {} max: {}'.format(depth.min(), depth.max()))
-        # print('Image, min: {} max: {}'.format(image.min(), image.max()))
 
         image = torch.clamp(image, 0.0, 1.0)
         return {'image': image, 'depth': depth}
@@ -74,7 +62,6 @@ class ToTensor(object):
 
 class RandomHorizontalFlip(object):
     def __call__(self, sample):
-
         img, depth = sample["image"], sample["depth"]
 
         if not _check_pil(img):
@@ -96,7 +83,6 @@ class RandomChannelSwap(object):
         self.indices = list(permutations(range(3), 3))
 
     def __call__(self, sample):
-
         image, depth = sample["image"], sample["depth"]
 
         if not _check_pil(image):
@@ -121,8 +107,7 @@ def train_transform(resolution):
     return transform
 
 def eval_transform(resolution):
-    transform = transforms.Compose([
-        Resize(resolution),
-        ToTensor(test=True, maxDepth=10.0)
-    ])
-    return transform
+    # transform = transforms.Compose([
+    #     ToTensor(test=True, maxDepth=10.0)
+    # ])
+    return ToTensor(test=True, maxDepth=10.0)
