@@ -9,6 +9,23 @@ _check_pil = lambda x: isinstance(x, Image.Image)
 
 _check_np_img = lambda x: isinstance(x, np.ndarray)
 
+class Resize(object):
+    def __init__(self, output_resolution):
+        self.resize = transforms.Resize(output_resolution)
+    
+    def __call__(self, sample):
+        image, depth = sample['image'], sample['depth']
+
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(np.uint8(image))
+        if isinstance(depth, np.ndarray):
+            depth = Image.fromarray(depth)
+        
+        image = self.resize(image)
+        depth = self.resize(depth)
+
+        return {'image': image, 'depth': depth}
+
 class ToTensor(object):
     def __init__(self, test=False, maxDepth=1000.0):
         self.test = test
@@ -37,12 +54,15 @@ class ToTensor(object):
             depth = depth / 255.0 * 10.0
             # depth = depth / 100.0
 
-            zero_mask = depth == 0.0
+            # zero_mask = depth == 0.0
+            valid_mask = depth != 0
+            depth[valid_mask] = self.maxDepth / depth[valid_mask]
+            # depth[:, zero_mask] = 0.0
             image, depth = transformation(image), transformation(depth)
+            zero_mask = depth == 0
             depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
-            depth = self.maxDepth / depth
+            depth[zero_mask] = 0.0
 
-            depth[:, zero_mask] = 0.0
         
 
         # print('Depth after, min: {} max: {}'.format(depth.min(), depth.max()))
@@ -92,7 +112,7 @@ class RandomChannelSwap(object):
 
         return {"image": image, "depth": depth}
 
-def train_transform():
+def train_transform(resolution):
     transform = transforms.Compose([
         RandomHorizontalFlip(),
         RandomChannelSwap(.25),
@@ -100,5 +120,9 @@ def train_transform():
     ])
     return transform
 
-def eval_transform():
-    return ToTensor(test=True, maxDepth=10.0)
+def eval_transform(resolution):
+    transform = transforms.Compose([
+        Resize(resolution),
+        ToTensor(test=True, maxDepth=10.0)
+    ])
+    return transform
