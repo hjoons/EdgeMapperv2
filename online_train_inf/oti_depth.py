@@ -27,23 +27,15 @@ def inference_thread():
     # Pre-trained weights
     model_path = "net.pth"
 
-    # # Assuming you are not loading a pruned PyTorch model
-    # modelI = load_model('GuideDepth').to(device)
-    # modelI.eval()
-    # modelI.reload_weights()
-
     # Assuming you are using a pruned PyTorch model
     modelI = torch.load(model_path)
     modelI.eval()
     
-    pred_frames = 0
-
     print(f"Starting capture...")
     config = Config(
         color_resolution=ColorResolution.RES_720P,
         depth_mode=DepthMode.NFOV_UNBINNED,
         camera_fps=FPS.FPS_15
-        #color_format=pyk4a.ImageFormat.COLOR_BGRA32,
     )
 
     k4a = PyK4A(config)
@@ -56,8 +48,6 @@ def inference_thread():
 
     # Open the device
     k4a.start()
-
-    # times = []
 
     while True:
         capture = k4a.get_capture()
@@ -120,17 +110,10 @@ def inference_thread():
 
                 buffer.put((color_np, depth_np))  # Move image back to CPU before storing in buffer
 
-            # print("Added a new entry to the buffer.")
-
             model_input = color_image_tensor.unsqueeze(0).to(device)
 
             with torch.no_grad():
-                # pred_start = time.time()
                 pred = modelI(model_input)
-                # pred_end = time.time()
-
-                # if pred_frames > 25:
-                #     pred_time.append((pred_end - pred_start))
 
                 pred = pred.detach().squeeze(0).squeeze(0).cpu().numpy()
 
@@ -149,18 +132,8 @@ def inference_thread():
             cv2.imshow("Prediction", pred)
             time.sleep(max(0., time_per_frame - (time.time() - start_time_all)))
 
-            # Evaluating latency metrics
-            # if pred_frames < 1000:
-            #     with open('inference_time.csv', 'a+') as f:
-            #         f.write(f"{pred_end - pred_start}\n")
-            # else:
-            #     print('Reached 1000 frames')
-
-            pred_frames += 1
-
             if (cv2.waitKey(1) & 0xFF == ord('q')):
                 break
-
 
     # Stop the cameras and close the device
     k4a.device_stop_cameras()
@@ -195,21 +168,14 @@ def training_thread():
     ax2.set_xlabel("Epochs")
     ax2.grid(True)
 
-    
-    # # Assuming that you are not using a pruned PyTorch model    
-    # modelT = load_model('GuideDepth').to(device)
-    # modelT.train()
-    # modelT.reload_weights()
-
     # Assuming that you are using a pruned PyTorch model
     modelT = torch.load('net.pth')
     
     criterion = Depth_Loss(alpha=.1, beta=1, gamma=1, maxDepth=10.0)
 
-    # Maybe play around with lr
     optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.001)
 
-    # print('NYU base loading...')
+    # Base NYUv2 buffer
     f = open('nyu2_base.pickle', 'rb')
     nyu_base = list(pkl.load(f))
     nyu_base = nyu_base[:16]
@@ -219,17 +185,12 @@ def training_thread():
     while True:
         if buffer.qsize() >= max_buffer_size:
         # Create a dataset from the buffer for training            
-
             inf_dataset = [buffer.get() for _ in range(max_buffer_size)]
 
             # keep some older images, i.e. replay buffer
             for ind in inf_dataset:
                 if random.random() < KEEP_PROB:
                     buffer.put((copy.deepcopy(ind[0]), copy.deepcopy(ind[1])))
-            
-            
-            # with open('dataloader.pkl', 'wb') as f:
-            #     pkl.dump(dataset, f)
 
             print('Evaluating model...')
             modelT.eval()
@@ -311,19 +272,9 @@ def training_thread():
         
             print('Trained on a batch of {:d} images. Loss: {:.5f} over {:.5f}s'.format(max_buffer_size + len(nyu_base), running_loss / len(dataset), train_end - train_start))
 
-            # if train_num < 125:
-            #     with open('train_time.csv', 'a+') as f:
-            #         f.write(f"{train_end - train_start}\n")
-            # else:
-            #     print('Reached 125 train_num')
-            #     exit(-1)
-            # For unpruned PyTorch
-            # modelT.save_weights("net_full.pth")
-                
-            # # For pruned PyTorch
-            # torch.save(modelT, 'net.pth')
             train_num += 1
                 
+            # Exchange models with inference thread
             if weight_buffer.empty():
                 weight_buffer.put(copy.deepcopy(modelT))
 
@@ -332,14 +283,8 @@ def training_thread():
         else:
             time.sleep(1)  # Wait for the buffer to fill
 
-# # Set up the device
+# Set up the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# # Assuming 'Net' is your PyTorch model AND it is not pruned
-# modelG = load_model('GuideDepth').to(device)
-# modelG.reload_weights('GuideDepth/model/NYU_Half_GuideDepth.pth')
-# modelG.train()  # Make sure the model is in training mode
-# modelG.save_weights()
 
 # Assuming you have a pruned PyTorch checkpoint
 modelG = torch.load('prune/ignored_pruned_model_0.3.pt')
@@ -362,19 +307,6 @@ def run_oit():
 
     inference.start()
     training.start()
-
-    # Running for a limited time or until a certain condition, then stopping
-    # try:
-    #     inference.join(timeout=10)  # Let's say we run this for 10 seconds for demonstration
-    #     training.join(timeout=10)
-    # except KeyboardInterrupt:
-    #     pass
-    #
-    # stop_event.set()
-    #
-    # inference.join()
-    # training.join()
-    # return None
 
 if __name__ == '__main__':
     run_oit()

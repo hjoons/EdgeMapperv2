@@ -38,14 +38,11 @@ class ToTensor(object):
         image = np.array(image).astype(np.float32) / 255.0
         depth = np.array(depth).astype(np.float32) # 0-255.0
 
+        # The depth image should be in range of 0-10000.0
         if self.test:
-            """
-            If test, move image to [0,1] and depth to [0, 1]
-
-            ***I don't understand why we do this***
-            """
             depth = depth / 1000.0
             image, depth = transformation(image), transformation(depth)
+        # The depth image should be a PIL image -> np
         else:
             depth = depth / 255.0 * 10.0
 
@@ -107,7 +104,4 @@ def train_transform(resolution):
     return transform
 
 def eval_transform(resolution):
-    # transform = transforms.Compose([
-    #     ToTensor(test=True, maxDepth=10.0)
-    # ])
     return ToTensor(test=True, maxDepth=10.0)
