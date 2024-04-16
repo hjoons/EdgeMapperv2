@@ -1,6 +1,8 @@
 from zipfile import ZipFile
 from torch.utils.data import Dataset, DataLoader
 from transforms import *
+import cv2
+import numpy as np
 
 class OTIDataset(Dataset):
     def __init__(self, data, split, transform=None):
@@ -14,6 +16,11 @@ class OTIDataset(Dataset):
 
         if isinstance(img, np.ndarray):
             img = Image.fromarray(img)
+
+        # inpaint depth image here
+        if isinstance(depth, np.ndarray):
+            mask = (depth == 0).astype(np.uint8)
+            depth = cv2.inpaint(depth, mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
 
         if self.split == 'train':
             if isinstance(depth, np.ndarray):
@@ -40,6 +47,16 @@ def loadZipToMem(zip_file):
 
     print(f'Loaded Test Images: {len(nyu2_test)}).')
     return data, nyu2_test
+
+def get_dataset(data, split, resolution):
+    if split == 'train':
+        transform = train_transform(resolution)
+        dataset = OTIDataset(data, split, transform=transform)
+        return dataset
+    elif split == 'eval':
+        transform = eval_transform(resolution)
+        dataset = OTIDataset(data, split, transform=transform)
+        return dataset
 
 def get_loader(data, batch_size, resolution, split):
     if split == 'train':

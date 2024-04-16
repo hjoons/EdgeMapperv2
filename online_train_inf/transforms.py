@@ -18,11 +18,16 @@ class Resize(object):
 
         if isinstance(image, np.ndarray):
             image = Image.fromarray(np.uint8(image))
-        if isinstance(depth, np.ndarray):
-            depth = Image.fromarray(depth)
         
         image = self.resize(image)
-        depth = self.resize(depth)
+        
+        if isinstance(depth, np.ndarray):
+            # depth = Image.fromarray(depth)
+            depth = torch.from_numpy(depth.astype(np.int32))
+            depth = self.resize(depth.unsqueeze(0))
+            depth = depth.squeeze(0).numpy()
+        else:
+            depth = self.resize(depth)
 
         return {'image': image, 'depth': depth}
 
@@ -48,6 +53,7 @@ class ToTensor(object):
 
             valid_mask = depth != 0
             depth[valid_mask] = self.maxDepth / depth[valid_mask]
+            # depth = self.maxDepth / depth
             image, depth = transformation(image), transformation(depth)
             zero_mask = depth == 0
             depth = torch.clamp(depth, self.maxDepth/100.0, self.maxDepth) 
@@ -97,6 +103,7 @@ class RandomChannelSwap(object):
 
 def train_transform(resolution):
     transform = transforms.Compose([
+        Resize(resolution),
         RandomHorizontalFlip(),
         RandomChannelSwap(.25),
         ToTensor(test=False, maxDepth=10.0)
@@ -104,4 +111,9 @@ def train_transform(resolution):
     return transform
 
 def eval_transform(resolution):
-    return ToTensor(test=True, maxDepth=10.0)
+    transform = transforms.Compose([
+        Resize(resolution),
+        ToTensor(test=True, maxDepth=10.0)
+    ])
+    # transform = ToTensor(test=True, maxDepth=10.0)
+    return transform

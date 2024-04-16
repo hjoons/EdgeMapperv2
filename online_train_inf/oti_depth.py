@@ -7,35 +7,52 @@ from GuideDepth.model.loader import load_model
 import matplotlib.pyplot as plt
 from pyk4a import PyK4A, Config, FPS, DepthMode, ColorResolution
 import cv2
-from dataloader import get_loader
+from dataloader import get_loader, get_dataset
 import pickle as pkl
 from loss import Depth_Loss
 import numpy as np
 from eval import compute_errors
 import copy
 import random
+import pandas as pd
+import torch.nn.utils.prune as prune
+import onnxruntime as rt
+import argparse
+from datareader import quantize
+parser = argparse.ArgumentParser(description='Run online training and inference')
+
+parser.add_argument('--inf_type', type=str, default="pytorch", help="Run on either Pytorch or ONNX")
+
+args = parser.parse_args()
 
 RESOLUTION = (240,320)
-BATCH_SIZE = 8
-SAMPLE_PROB = 0.5
+BATCH_SIZE = 4
+SAMPLE_PROB = 0.75
 KEEP_PROB = 0.5
+MAX_BUFFER_SIZE = 16
 
 def inference_thread():
     resize_transform = transforms.Resize(RESOLUTION)
-    fps = 16
+    fps = 30
     time_per_frame = 1 / fps  # 0.041666666666666664 = 41.6ms
     # Pre-trained weights
     model_path = "net.pth"
 
-    # Assuming you are using a pruned PyTorch model
-    modelI = torch.load(model_path)
-    modelI.eval()
+    if args.inf_type == 'pytorch':
+        modelI = torch.load(model_path)
+        modelI.eval()
+    else:
+        sess_options = rt.SessionOptions() # i don't think we need this ## I thiunk we do (Allen)
+        sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.optimized_model_filepath = "temp.onnx"
+        sess = rt.InferenceSession("temp.onnx", sess_options=sess_options, providers=["CUDAExecutionProvider"])
+        input_name = sess.get_inputs()[0].name
     
     print(f"Starting capture...")
     config = Config(
         color_resolution=ColorResolution.RES_720P,
         depth_mode=DepthMode.NFOV_UNBINNED,
-        camera_fps=FPS.FPS_15
+        camera_fps=FPS.FPS_30
     )
 
     k4a = PyK4A(config)
@@ -46,23 +63,44 @@ def inference_thread():
     end_height = start_height + height
     end_width = start_width + width
 
+
+    keys = ['capture', 'color_train', 'depth_train', 'color_plot', 'depth_plot', 'sample', 'inference', 'inference_plot', 'plot']
+    profile = {key: [] for key in keys}
+    frame_num = 0
+    
     # Open the device
     k4a.start()
 
     while True:
+        capture_start = time.time()
         capture = k4a.get_capture()
+        capture_end = time.time()
+
+        profile['capture'].append(capture_end - capture_start)
+        
         start_time_all = time.time()
         if stop_event.is_set():
             break
+        
 
         if weight_buffer.full():
             print('Updating model...')
-            # Assuming we are working with a pruned model
-            modelI = weight_buffer.get()
-            modelI.eval()
+            if args.inf_type == 'pytorch':
+                modelI = weight_buffer.get()
+                modelI.eval()
+            else: # ONNX
+                message = weight_buffer.get()
+                sess_options = rt.SessionOptions() # i don't think we need this ## I thiunk we do (Allen)
+                sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
+                sess_options.optimized_model_filepath = "quantized.onnx"
+                sess = rt.InferenceSession("temp.onnx", sess_options=sess_options, providers=["CUDAExecutionProvider"])
+                input_name = sess.get_inputs()[0].name
             print('Model updated!\n')
 
+        
         if capture is not None:
+
+            color_start = time.time()
             # Get the color image from the capture
             color_image = capture.color[start_height:end_height, start_width:end_width, 0:3]
 
@@ -70,66 +108,123 @@ def inference_thread():
             color_image = torch.from_numpy(color_image).transpose(0,1).transpose(0,2)
             color_image = resize_transform(color_image)
             color_image = color_image.transpose(0,2).transpose(0,1).numpy()
+            color_end = time.time()
 
+            profile['color_train'].append(color_end - color_start)
+            
+            depth_start = time.time()
             # transformed_depth_image
             transformed_depth_image = capture.transformed_depth[start_height:end_height, start_width:end_width]
 
             # inpainting depth image
-            mask = (transformed_depth_image == 0).astype(np.uint8)
-            transformed_depth_image = cv2.inpaint(transformed_depth_image, mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
+            # mask = (transformed_depth_image == 0).astype(np.uint8)
+            # transformed_depth_image = cv2.inpaint(transformed_depth_image, mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
+            depth_end = time.time()
 
-            # resizing to (240,320) for downsampling
-            transformed_depth_image = torch.from_numpy(transformed_depth_image.astype(np.int32))
-            transformed_depth_image = resize_transform(transformed_depth_image.unsqueeze(0))
-            transformed_depth_image_np = transformed_depth_image.squeeze(0).numpy()
-
-            # valid_mask = (transformed_depth_image_np != 0)
-            # valid_mask = np.expand_dims(valid_mask, axis=-1)
-            transformed_depth_image = transformed_depth_image_np / 10000.0
+            profile['depth_train'].append(depth_end - depth_start)
             
-            transformed_depth_image_int8 = (transformed_depth_image * 255).astype(np.uint8)        
-            transformed_depth_image_int8 = cv2.applyColorMap(transformed_depth_image_int8, cv2.COLORMAP_JET)
-            # transformed_depth_image_int8 = transformed_depth_image_int8 * valid_mask
+            depth_start = time.time()
+            # resizing to (240,320) for downsampling
+            transformed_depth_image_plt = torch.from_numpy(transformed_depth_image.astype(np.int32))
+            transformed_depth_image_plt = resize_transform(transformed_depth_image_plt.unsqueeze(0))
+            transformed_depth_image_plt = transformed_depth_image_plt.squeeze(0).numpy()
 
+            valid_mask = (transformed_depth_image_plt != 0)
+            valid_mask = np.expand_dims(valid_mask, axis=-1)
+            transformed_depth_image_plt = transformed_depth_image_plt / 10000.0
+            
+            transformed_depth_image_plt = (transformed_depth_image_plt * 255).astype(np.uint8)        
+            transformed_depth_image_plt = cv2.applyColorMap(transformed_depth_image_plt, cv2.COLORMAP_JET)
+            transformed_depth_image_plt = transformed_depth_image_plt * valid_mask
+            depth_end = time.time()
+
+            profile['depth_plot'].append(depth_end - depth_start)
 
             # depth_np = capture.transformed_depth[start_height:end_height, start_width:end_width]
-            depth_np = transformed_depth_image_np
+            depth_np = transformed_depth_image
             color_np = color_image
-                        
+            
+            color_start = time.time()
             color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_RGBA2RGB)
             color_image_tensor = torch.from_numpy(color_image_rgb)
             color_image_tensor = color_image_tensor.transpose(0, 1).transpose(0, 2).contiguous()
             color_image_tensor = color_image_tensor.float().div(255)
+            color_end = time.time()
 
+            profile['color_plot'].append(color_end - color_start)
+            
+            sample_start = time.time()
+            
             # sampling for training
             if random.random() < SAMPLE_PROB:
                 # Put the (image, label) tuple in the buffer
-                if buffer.qsize() >= max_buffer_size:
+                if buffer.qsize() >= MAX_BUFFER_SIZE:
                     # Remove the oldest item to make space for the new one
                     buffer.get()  # This line removes the oldest entry from the queue
 
                 buffer.put((color_np, depth_np))  # Move image back to CPU before storing in buffer
+                sample_end = time.time()
 
-            model_input = color_image_tensor.unsqueeze(0).to(device)
-
+                profile['sample'].append(sample_end - sample_start)
+            if args.inf_type == 'pytorch':
+                model_input = color_image_tensor.unsqueeze(0).to(device)
+            else: # ONNX
+                model_input = color_image_tensor.unsqueeze(0).to('cpu').numpy()
             with torch.no_grad():
-                pred = modelI(model_input)
+                inf_start = time.time()
+                if args.inf_type == 'pytorch':
+                    pred = modelI(model_input)
+                else: #ONNX
+                    pred = sess.run(None, {input_name: model_input})[0]
+                inf_end = time.time()
 
-                pred = pred.detach().squeeze(0).squeeze(0).cpu().numpy()
+                profile['inference'].append(inf_end - inf_start)
 
+                inf_start = time.time()
+
+                if args.inf_type == 'pytorch':
+                    pred = pred.detach().squeeze(0).squeeze(0).cpu().numpy()
+                else: # ONNX 
+                    pred = np.squeeze(pred)
+                # pred_onnx = np.squeeze(pred_onnx, axis=0)
+                # pred_onnx = np.squeeze(pred_onnx, axis=0)
+                # zero_mask = pred == 0.0
                 zero_mask = pred == 0.0
                 
+                # pred = np.clip(pred, 10.0/100.0, 10.0)
                 pred = np.clip(pred, 10.0/100.0, 10.0) 
+                # pred = 10.0 / pred
                 pred = 10.0 / pred
 
+                # pred[zero_mask] = 0.0
                 pred[zero_mask] = 0.0
 
+                # pred = ((pred / 10.0) * 255).astype(np.uint8)
                 pred = ((pred / 10.0) * 255).astype(np.uint8)
+                # pred = cv2.(pred, cv2.COLORMAP_JET)
                 pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
-            
+                inf_end = time.time()
+                profile['inference_plot'].append(inf_end - inf_start)
+
+            plot_start = time.time()
+            cv2.rectangle(color_image_rgb, (0,220), (75,240), color=(0,0,0), thickness=cv2.FILLED)
+            cv2.putText(color_image_rgb, '{:.2f}fps'.format(1 / (time.time() - start_time_all)), (0,235), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1, cv2.LINE_AA)
             cv2.imshow("Real-Time Video", color_image_rgb)
-            cv2.imshow("Depth Image", transformed_depth_image_int8)
+            cv2.imshow("Depth Image", transformed_depth_image_plt)
             cv2.imshow("Prediction", pred)
+            plot_end = time.time()
+
+            frame_num += 1
+
+            profile['plot'].append(plot_end - plot_start)
+            if frame_num == 1000:
+                for key in profile:
+                    profile[key] += [None] * (1000 - len(profile[key]))
+
+                df = pd.DataFrame.from_dict(profile)
+                df.to_csv(f'profile__onnxqt_bs{BATCH_SIZE}.csv')
+                print('\n\nFinished Profiling\n\n')
+
             time.sleep(max(0., time_per_frame - (time.time() - start_time_all)))
 
             if (cv2.waitKey(1) & 0xFF == ord('q')):
@@ -142,7 +237,15 @@ def inference_thread():
     # Close the OpenCV window
     cv2.destroyAllWindows()
 
+def prune_model(model, pruning_ratio):
+    for name, module in model.named_modules():
+        if (isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear)):
+            prune.l1_unstructured(module, name='weight', amount=pruning_ratio)
+    
+
+
 def training_thread():
+    start_time = None
     epochs = []
     abs_rels = []
     sq_rels = []
@@ -165,7 +268,7 @@ def training_thread():
     d_2, = ax2.plot([],[], color="pink", label=r'$\delta$2')
     d_3, = ax2.plot([],[], color="brown", label=r'$\delta$3')
     ax2.legend(loc='lower right', bbox_to_anchor=(1,0))
-    ax2.set_xlabel("Epochs")
+    ax2.set_xlabel("Time (s)")
     ax2.grid(True)
 
     # Assuming that you are using a pruned PyTorch model
@@ -176,16 +279,16 @@ def training_thread():
     optimizer = torch.optim.AdamW(modelT.parameters(), lr=0.001)
 
     # Base NYUv2 buffer
-    f = open('nyu2_base.pickle', 'rb')
+    f = open('nyu2_test1.pickle', 'rb')
     nyu_base = list(pkl.load(f))
     nyu_base = nyu_base[:16]
     f.close()
 
     train_num = 0
     while True:
-        if buffer.qsize() >= max_buffer_size:
+        if buffer.qsize() >= MAX_BUFFER_SIZE:
         # Create a dataset from the buffer for training            
-            inf_dataset = [buffer.get() for _ in range(max_buffer_size)]
+            inf_dataset = [buffer.get() for _ in range(MAX_BUFFER_SIZE)]
 
             # keep some older images, i.e. replay buffer
             for ind in inf_dataset:
@@ -221,8 +324,11 @@ def training_thread():
             d1 = mean_errors[4]
             d2 = mean_errors[5]
             d3 = mean_errors[6]
-
-            epochs.append(train_num)
+            if (len(epochs) <= 0):
+                epochs.append(0)
+                start_time = time.time()
+            else:
+                epochs.append(time.time() - start_time)
             abs_rels.append(abs_rel)
             sq_rels.append(sq_rel)
             rmses.append(rmse)
@@ -270,19 +376,33 @@ def training_thread():
 
             train_end = time.time()
         
-            print('Trained on a batch of {:d} images. Loss: {:.5f} over {:.5f}s'.format(max_buffer_size + len(nyu_base), running_loss / len(dataset), train_end - train_start))
+            print('Trained on a batch of {:d} images. Loss: {:.5f} over {:.5f}s'.format(MAX_BUFFER_SIZE + len(nyu_base), running_loss / len(dataset), train_end - train_start))
 
             train_num += 1
-                
+            # print(f"Unstructured Pruning started...")
+            # prune_model(modelT, 0.5)
+            # print(f"Finished Unstructured Pruning")
+            # for name, module in modelT.named_modules():
+            #     if (isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear)):
+            #         prune.l1_unstructured(module, name='weight', amount=0.8)
+            #         prune.remove(module, 'weight')
             # Exchange models with inference thread
             if weight_buffer.empty():
-                weight_buffer.put(copy.deepcopy(modelT))
+                modelT.eval()
+                if args.inf_type == 'pytorch':
+                    weight_buffer.put(copy.deepcopy(modelT))
+                else:
+                    # quantize
+                    oti_ds = get_dataset(inf_dataset,'train', RESOLUTION)
+                    torch.onnx.export(modelT.to('cpu'), torch.randn(1,3,240,320), "temp.onnx", export_params=True, opset_version=17, do_constant_folding=True)
+                    quantize('temp.onnx', 'quantized.onnx', oti_ds)
+                    weight_buffer.put("ONNX model sent")
+                modelT.to('cuda')
 
             
             
         else:
             time.sleep(1)  # Wait for the buffer to fill
-
 # Set up the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -290,12 +410,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 modelG = torch.load('prune/ignored_pruned_model_0.3.pt')
 modelG.train()
 torch.save(modelG, 'net.pth')
+modelG.eval()
+if args.inf_type == 'onnx':
+    torch.onnx.export(modelG.to('cpu'), torch.randn(1,3,240,320), "temp.onnx", export_params=True, opset_version=13, do_constant_folding=True)
 
 modelG = None
-
 # The buffer to store data for training
-max_buffer_size = 16  # Define the maximum size of the buffer
-buffer = queue.Queue(maxsize=max_buffer_size)
+buffer = queue.Queue(maxsize=MAX_BUFFER_SIZE)
 weight_buffer = queue.Queue(maxsize=1)
 
 # Stop event to cleanly exit threads

@@ -17,9 +17,9 @@ def pytorch_to_onnx(pytorch_model: nn.Module, save_onnx: str):
 	Returns:
 		None
 	"""
-	model.eval()
+	pytorch_model.eval()
 	
-	torch.onnx.export(model, torch.randn(1,3,480,640), save_onnx, export_params=True, opset_version=13, do_constant_folding=True)
+	torch.onnx.export(pytorch_model, torch.randn(1,3,480,640), save_onnx, export_params=True, opset_version=13, do_constant_folding=True)
 	
 def onnx_to_tensorrt(onnx_path: str, save_trt: str, enable_fp16: bool = False, enable_int8: bool = False):
 	"""
